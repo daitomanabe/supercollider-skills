@@ -1,0 +1,426 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>SC WebUI Starter</title>
+<style>
+:root {
+  --bg: #0b0b0b;
+  --panel: #141414;
+  --panel-2: #1c1c1c;
+  --border: rgba(255, 255, 255, 0.14);
+  --text: #ffffff;
+  --muted: rgba(255, 255, 255, 0.72);
+  --mono: Menlo, Monaco, Consolas, monospace;
+  --sans: system-ui, sans-serif;
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0;
+  min-height: 100vh;
+  background: linear-gradient(180deg, #111, #050505);
+  color: var(--text);
+  font-family: var(--sans);
+}
+header {
+  padding: 16px 20px;
+  border-bottom: 1px solid var(--border);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+}
+h1 {
+  margin: 0;
+  font-family: var(--mono);
+  font-size: 14px;
+  letter-spacing: 0.2em;
+  text-transform: uppercase;
+}
+#statusBar {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+.status {
+  border: 1px solid var(--border);
+  padding: 6px 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+}
+main {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 1px;
+  background: var(--border);
+  min-height: calc(100vh - 61px);
+}
+.panel {
+  background: var(--panel);
+  padding: 18px;
+}
+.panel h2 {
+  margin: 0 0 14px;
+  font-family: var(--mono);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.18em;
+}
+.group {
+  margin-bottom: 18px;
+}
+.group-title {
+  margin-bottom: 8px;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+}
+.field {
+  display: grid;
+  grid-template-columns: 110px minmax(0, 1fr) 60px;
+  gap: 10px;
+  align-items: center;
+  margin-bottom: 8px;
+}
+.field label,
+.value {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+.value {
+  color: var(--muted);
+  text-align: right;
+}
+input[type="range"],
+input[type="number"],
+select {
+  width: 100%;
+}
+input[type="number"],
+select {
+  padding: 7px 8px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--text);
+}
+.buttons {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 12px;
+}
+button {
+  padding: 10px 12px;
+  background: var(--panel-2);
+  color: var(--text);
+  border: 1px solid var(--border);
+  cursor: pointer;
+  font-family: var(--mono);
+  font-size: 11px;
+}
+button:disabled { opacity:0.4; cursor:default; }
+button.primary {
+  background: #f3f3f3;
+  color: #111;
+}
+#progressText,
+#logs {
+  font-family: var(--mono);
+  font-size: 11px;
+}
+#progressText {
+  margin-top: 12px;
+  color: var(--muted);
+}
+#logs {
+  margin-top: 20px;
+  border: 1px solid var(--border);
+  background: #0a0a0a;
+  padding: 10px;
+  height: 240px;
+  overflow: auto;
+  white-space: pre-wrap;
+}
+@media (max-width: 900px) {
+  main {
+    grid-template-columns: 1fr;
+  }
+}
+</style>
+</head>
+<body>
+<header>
+  <h1>SC WebUI Starter</h1>
+  <div id="statusBar">
+    <div class="status" id="wsStatus">WS: connecting</div>
+    <div class="status" id="scStatus">SC: booting</div>
+  </div>
+</header>
+
+<main>
+  <section class="panel">
+    <h2>Preview</h2>
+    <div id="previewPanel"></div>
+    <div class="buttons">
+      <button class="primary" id="btnPlay">Play</button>
+      <button id="btnStop">Stop</button>
+      <button id="btnCopy">Copy Preview -&gt; Render</button>
+      <button id="btnReset">Reset</button>
+    </div>
+  </section>
+
+  <section class="panel">
+    <h2>Render</h2>
+    <div id="renderPanel"></div>
+    <div class="buttons">
+      <button class="primary" id="btnBatchStart">Start Batch</button>
+      <button id="btnBatchStop">Stop After Current</button>
+    </div>
+    <div id="progressText" role="status">Waiting for engine</div>
+    <div id="logs"></div>
+  </section>
+</main>
+
+<script>
+let SCHEMA = null;
+let ws = null;
+let isPlaying = false;
+const WS_URL = `${location.protocol === "https:" ? "wss:" : "ws:"}//${location.host}/`;
+let engineState = {status:"connecting", previewRunning:false, renderRunning:false};
+let reconnectTimer;
+function applyState(state) {
+  engineState = state;
+  isPlaying = state.previewRunning;
+  document.getElementById("scStatus").textContent = `SC: ${state.status} / audio: ${state.audio || "stopped"}`;
+  const ready = state.status === "ready" && ws?.readyState === 1;
+  document.getElementById("btnPlay").disabled = !ready || state.audio === "disabled";
+  document.getElementById("btnStop").disabled = !ready;
+  document.getElementById("btnBatchStart").disabled = !ready || state.renderRunning;
+  document.getElementById("btnBatchStop").disabled = !ready || !state.renderRunning;
+  document.getElementById("progressText").textContent = state.batch?.message || (state.batch?.current ? `${state.batch.current}/${state.batch.total} ${state.batch.file || ""}` : (ready ? "Ready" : "Waiting for engine"));
+}
+
+function addLog(message) {
+  const logs = document.getElementById("logs");
+  const stamp = new Date().toLocaleTimeString();
+  logs.textContent = (logs.textContent + `[${stamp}] ${message}\n`).split("\n").slice(-500).join("\n");
+  logs.scrollTop = logs.scrollHeight;
+}
+
+function formatValue(value, param) {
+  if (param.type === "int") return String(Math.round(Number(value)));
+  if (param.type === "float") return Number(value).toFixed(2);
+  return String(value);
+}
+
+function buildField(key, param, prefix) {
+  const field = document.createElement("div");
+  field.className = "field";
+
+  const label = document.createElement("label");
+  label.textContent = param.label;
+  field.appendChild(label);
+
+  let input;
+  if (param.control === "select") {
+    input = document.createElement("select");
+    input.id = prefix + key;
+    for (const [name, value] of param.options) {
+      const option = document.createElement("option");
+      option.value = value;
+      option.textContent = name;
+      if (value === param.default) option.selected = true;
+      input.appendChild(option);
+    }
+  } else {
+    input = document.createElement("input");
+    input.id = prefix + key;
+    input.type = param.min !== undefined && param.max !== undefined ? "range" : "number";
+    if (param.min !== undefined) input.min = param.min;
+    if (param.max !== undefined) input.max = param.max;
+    if (param.step !== undefined) input.step = param.step;
+    input.value = param.default;
+  }
+  label.htmlFor = input.id;
+  field.appendChild(input);
+
+  const value = document.createElement("div");
+  value.className = "value";
+  value.id = `${prefix}${key}_value`;
+  value.textContent = formatValue(param.default, param);
+  field.appendChild(value);
+
+  const updateValue = () => {
+    value.textContent = formatValue(input.value, param);
+  };
+  input.addEventListener("input", updateValue);
+  input.addEventListener("change", updateValue);
+
+  return field;
+}
+
+function buildGroup(container, groupId, prefix) {
+  const groupDef = SCHEMA.groups[groupId];
+  const wrapper = document.createElement("div");
+  wrapper.className = "group";
+  const title = document.createElement("div");
+  title.className = "group-title";
+  title.textContent = groupDef.label;
+  wrapper.appendChild(title);
+
+  for (const [key, param] of Object.entries(SCHEMA.params)) {
+    if (param.group === groupId) wrapper.appendChild(buildField(key, param, prefix));
+  }
+  container.appendChild(wrapper);
+}
+
+function getInputValue(key, prefix) {
+  const input = document.getElementById(prefix + key);
+  const param = SCHEMA.params[key];
+  if (!input || !param) return undefined;
+  if (param.type === "string") return input.value;
+  return Number(input.value);
+}
+
+function collectParams(keys, prefix) {
+  const out = {};
+  for (const key of keys) out[key] = getInputValue(key, prefix);
+  return out;
+}
+
+function send(action, params) {
+  if (!ws || ws.readyState !== 1) { addLog("WebSocket is disconnected"); return; }
+  ws.send(JSON.stringify({ action, params }));
+}
+
+function resetPreview() {
+  for (const [key, param] of Object.entries(SCHEMA.params)) {
+    const input = document.getElementById(`p_${key}`);
+    const value = document.getElementById(`p_${key}_value`);
+    if (input) {
+      input.value = param.default;
+      value.textContent = formatValue(param.default, param);
+    }
+  }
+  if (isPlaying) send("preview/setParams", collectParams(SCHEMA.messages["/preview/setParams"].params, "p_"));
+}
+
+function copyPreviewToRender() {
+  const mapping = {tempoMin:"tempo", tempoMax:"tempo", seconds:"seconds", startingSeed:"seed"};
+  for (const key of SCHEMA.messages["/render/start"].params) {
+    const source = mapping[key] || key;
+    const src = document.getElementById(`p_${source}`);
+    const dst = document.getElementById(`r_${key}`);
+    if (src && dst) {
+      dst.value = src.value;
+      document.getElementById(`r_${key}_value`).textContent = formatValue(dst.value, SCHEMA.params[key]);
+    }
+  }
+  const seedMode = document.getElementById("r_seedMode");
+  seedMode.value = "fixed";
+  document.getElementById("r_seedMode_value").textContent = "fixed";
+  addLog("Copied preview settings, tempo and seed to render");
+}
+
+function wirePreviewInputs() {
+  const setKeys = SCHEMA.messages["/preview/setParams"].params;
+  for (const key of SCHEMA.messages["/preview/play"].params) {
+    const input = document.getElementById(`p_${key}`);
+    if (!input) continue;
+    const sendLive = () => {
+      if (!isPlaying) return;
+      send("preview/setParams", collectParams(setKeys, "p_"));
+    };
+    input.addEventListener("input", sendLive);
+    input.addEventListener("change", sendLive);
+  }
+}
+
+function connectWS() {
+  ws = new WebSocket(WS_URL);
+  ws.addEventListener("open", () => {
+    document.getElementById("wsStatus").textContent = "WS: connected";
+    addLog("WebSocket connected");
+  });
+  ws.addEventListener("close", () => {
+    document.getElementById("wsStatus").textContent = "WS: disconnected";
+    applyState({...engineState, status:"disconnected", previewRunning:false});
+    clearTimeout(reconnectTimer);
+    reconnectTimer = setTimeout(connectWS, 1000);
+  });
+  ws.addEventListener("error", () => addLog("WebSocket connection error"));
+  ws.addEventListener("message", (event) => {
+    let message;
+    try { message = JSON.parse(event.data); } catch { addLog("Invalid server event"); return; }
+    if (message.type === "state") applyState(message.data);
+    if (message.type === "error") addLog(message.data.message);
+    if (message.type === "renderJobDone") addLog(`Verified WAV/JSON: ${message.data.file}`);
+    if (message.type === "log") addLog(message.data.message);
+    if (message.type === "previewStarted") isPlaying = true;
+    if (message.type === "previewStopped") isPlaying = false;
+    if (message.type === "renderProgress") {
+      const { current, total, file } = message.data;
+      document.getElementById("progressText").textContent = `${current}/${total} ${file || ""}`;
+    }
+    if (message.type === "renderError") {
+      addLog(`Render error job ${message.data.job}: ${message.data.message}`);
+    }
+    if (message.type === "renderDone") {
+      document.getElementById("progressText").textContent = message.data.message;
+    }
+    if (message.type === "scStatus") {
+      document.getElementById("scStatus").textContent = `SC: ${message.data.status}`;
+    }
+  });
+}
+
+async function init() {
+  const response = await fetch("/params.json");
+  SCHEMA = await response.json();
+
+  const previewPanel = document.getElementById("previewPanel");
+  for (const groupId of SCHEMA.panels.preview) buildGroup(previewPanel, groupId, "p_");
+
+  const renderPanel = document.getElementById("renderPanel");
+  const batchWrapper = document.createElement("div");
+  batchWrapper.className = "group";
+  const batchTitle = document.createElement("div");
+  batchTitle.className = "group-title";
+  batchTitle.textContent = SCHEMA.groups.batch.label;
+  batchWrapper.appendChild(batchTitle);
+  for (const key of SCHEMA.panels.render.batch) {
+    batchWrapper.appendChild(buildField(key, SCHEMA.params[key], "r_"));
+  }
+  renderPanel.appendChild(batchWrapper);
+  for (const groupId of SCHEMA.panels.render.groups) buildGroup(renderPanel, groupId, "r_");
+
+  wirePreviewInputs();
+  applyState(engineState);
+  connectWS();
+
+  const playKeys = SCHEMA.messages["/preview/play"].params;
+  const renderKeys = SCHEMA.messages["/render/start"].params;
+
+  document.getElementById("btnPlay").addEventListener("click", () => {
+    send("preview/play", collectParams(playKeys, "p_"));
+  });
+  document.getElementById("btnStop").addEventListener("click", () => {
+    send("preview/stop", {});
+  });
+  document.getElementById("btnCopy").addEventListener("click", copyPreviewToRender);
+  document.getElementById("btnReset").addEventListener("click", resetPreview);
+  document.getElementById("btnBatchStart").addEventListener("click", () => {
+    send("render/start", collectParams(renderKeys, "r_"));
+  });
+  document.getElementById("btnBatchStop").addEventListener("click", () => {
+    send("render/stop", {});
+  });
+}
+
+init().catch(error => addLog(`Startup failed: ${error.message}`));
+</script>
+</body>
+</html>

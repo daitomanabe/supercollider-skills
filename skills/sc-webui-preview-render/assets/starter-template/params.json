@@ -1,0 +1,188 @@
+{
+  "messages": {
+    "/preview/play": {
+      "params": [
+        "tempo",
+        "seconds",
+        "seed",
+        "engineDrive",
+        "fxMix"
+      ]
+    },
+    "/preview/setParams": {
+      "params": [
+        "tempo",
+        "seconds",
+        "seed",
+        "engineDrive",
+        "fxMix"
+      ]
+    },
+    "/render/start": {
+      "params": [
+        "count",
+        "tempoMin",
+        "tempoMax",
+        "seconds",
+        "seedMode",
+        "startingSeed",
+        "takeStart",
+        "engineDrive",
+        "fxMix"
+      ],
+      "suffix": [
+        "outputDir",
+        "batchId"
+      ]
+    }
+  },
+  "groups": {
+    "transport": {
+      "label": "Transport"
+    },
+    "engine": {
+      "label": "Engine"
+    },
+    "fx": {
+      "label": "FX"
+    },
+    "batch": {
+      "label": "Batch"
+    }
+  },
+  "panels": {
+    "preview": [
+      "transport",
+      "engine",
+      "fx"
+    ],
+    "render": {
+      "batch": [
+        "count",
+        "tempoMin",
+        "tempoMax",
+        "seconds",
+        "seedMode",
+        "startingSeed",
+        "takeStart"
+      ],
+      "groups": [
+        "engine",
+        "fx"
+      ]
+    }
+  },
+  "params": {
+    "tempo": {
+      "default": 128,
+      "min": 60,
+      "max": 200,
+      "step": 1,
+      "type": "int",
+      "group": "transport",
+      "label": "Tempo"
+    },
+    "seconds": {
+      "default": 8,
+      "min": 1,
+      "max": 120,
+      "step": 1,
+      "type": "int",
+      "group": "transport",
+      "label": "Seconds"
+    },
+    "seed": {
+      "default": 0,
+      "min": 0,
+      "max": 99999,
+      "step": 1,
+      "type": "int",
+      "group": "transport",
+      "label": "Seed"
+    },
+    "engineDrive": {
+      "default": 1.2,
+      "min": 0.5,
+      "max": 4,
+      "step": 0.01,
+      "type": "float",
+      "group": "engine",
+      "label": "Engine Drive"
+    },
+    "fxMix": {
+      "default": 0.12,
+      "min": 0,
+      "max": 1,
+      "step": 0.01,
+      "type": "float",
+      "group": "fx",
+      "label": "FX Mix"
+    },
+    "count": {
+      "default": 8,
+      "min": 1,
+      "max": 200,
+      "step": 1,
+      "type": "int",
+      "group": "batch",
+      "label": "Count"
+    },
+    "tempoMin": {
+      "default": 120,
+      "min": 60,
+      "max": 200,
+      "step": 1,
+      "type": "int",
+      "group": "batch",
+      "label": "Tempo Min"
+    },
+    "tempoMax": {
+      "default": 140,
+      "min": 60,
+      "max": 200,
+      "step": 1,
+      "type": "int",
+      "group": "batch",
+      "label": "Tempo Max"
+    },
+    "seedMode": {
+      "default": "increment",
+      "type": "string",
+      "group": "batch",
+      "label": "Seed Mode",
+      "control": "select",
+      "options": [
+        [
+          "Fixed",
+          "fixed"
+        ],
+        [
+          "Increment",
+          "increment"
+        ],
+        [
+          "Random",
+          "random"
+        ]
+      ]
+    },
+    "startingSeed": {
+      "default": 0,
+      "min": 0,
+      "max": 99999,
+      "step": 1,
+      "type": "int",
+      "group": "batch",
+      "label": "Starting Seed"
+    },
+    "takeStart": {
+      "default": 1,
+      "min": 1,
+      "max": 9999,
+      "step": 1,
+      "type": "int",
+      "group": "batch",
+      "label": "Take Start"
+    }
+  }
+}

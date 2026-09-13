@@ -1,0 +1,4 @@
+interface:
+  display_name: "SC Composition Toolkit"
+  short_description: "Headless SuperCollider: synths, FX, granular, spatial, NRT export"
+  default_prompt: "Use $sc-composition-toolkit to compose or render with SuperCollider. Start from the bundled stock-SuperCollider example, use the bounded headless runner, and verify the actual WAV's metadata, non-silence, and levels."

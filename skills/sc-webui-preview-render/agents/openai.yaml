@@ -1,0 +1,4 @@
+interface:
+  display_name: "SC WebUI Preview/Render"
+  short_description: "SuperCollider + WebUI のスターターテンプレート"
+  default_prompt: "Use $sc-webui-preview-render to scaffold or refactor a reusable SuperCollider + WebUI preview/render template."

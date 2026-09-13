@@ -1,0 +1,62 @@
+const test=require('node:test');
+const assert=require('node:assert/strict');
+const fs=require('node:fs');
+const os=require('node:os');
+const path=require('node:path');
+const {spawn}=require('node:child_process');
+const osc=require('node-osc');
+const {WebSocket}=require('ws');
+const {freePorts,until}=require('./helpers');
+test('HTTP, guarded WebSocket, validated OSC and reconnect state', {timeout:20000}, async()=>{
+  const [httpPort,feedbackPort,languagePort,audioPort]=await freePorts();
+  const dir=fs.mkdtempSync(path.join(os.tmpdir(),'scw-transport-'));
+  const fakeSC=new osc.Server(languagePort,'127.0.0.1');
+  const feedback=new osc.Client('127.0.0.1',feedbackPort);
+  const received=[];
+  fakeSC.on('message',message=>{received.push(message);if(message[0]==='/status/get')feedback.send('/sc/status','ready','stopped',0,0);});
+  const child=spawn(process.execPath,['server.js'],{cwd:path.join(__dirname,'..'),env:{...process.env,SCW_HTTP_PORT:String(httpPort),SCW_FEEDBACK_PORT:String(feedbackPort),SCW_LANGUAGE_PORT:String(languagePort),SCW_AUDIO_PORT:String(audioPort),SCW_DATA_DIR:dir},stdio:['ignore','pipe','pipe']});
+  let output='';child.stdout.on('data',data=>output+=data);child.stderr.on('data',data=>output+=data);
+  const sockets=[];
+  const url=`http://127.0.0.1:${httpPort}`;
+  try {
+    await until(async()=>{if(child.exitCode!==null)throw Error(output);try{return (await (await fetch(url+'/api/status')).json()).status==='ready'}catch{return false}},7000);
+    assert.equal((await fetch(url)).status,200);
+    assert.equal(await new Promise((resolve,reject)=>require('node:http').get(url,{headers:{host:`evil.test:${httpPort}`}},res=>{res.resume();resolve(res.statusCode)}).on('error',reject)),403);
+    assert.equal((await fetch(url+'/api/presets/test',{method:'POST',headers:{'Content-Type':'application/json',Origin:'https://evil.test'},body:'{}'})).status,403);
+    assert.equal((await fetch(url+'/api/presets/..%2Fescape',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}'})).status,400);
+    assert.equal((await fetch(url+'/api/presets/test',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({preview:{tempo:131},render:{count:2}})})).status,200);
+    assert.equal((await (await fetch(url+'/api/presets/test')).json()).preview.tempo,131);
+    assert.equal(fs.existsSync(path.join(dir,'escape.json')),false);
+    const malicious=new WebSocket(url.replace('http:','ws:'),{origin:'https://evil.test'});sockets.push(malicious);
+    const denied=await new Promise(resolve=>{malicious.once('unexpected-response',(req,res)=>{resolve(res.statusCode);res.resume();req.destroy();});malicious.on('error',()=>{});});
+    assert.equal(denied,403);
+    const ws=new WebSocket(url.replace('http:','ws:'));sockets.push(ws);
+    const events=[];ws.on('message',raw=>events.push(JSON.parse(raw)));
+    await new Promise(resolve=>ws.once('open',resolve));
+    await until(()=>events.some(event=>event.type==='state'&&event.data.status==='ready'));
+    for(const payload of ['null','[]','{"action":"preview/play","params":{"tempo":0}}'])ws.send(payload);
+    await until(()=>events.filter(event=>event.type==='error').length===3);
+    assert.equal(received.some(message=>message[0]==='/preview/play'),false);
+    ws.send(JSON.stringify({action:'preview/play',params:{tempo:130,seed:77}}));
+    await until(()=>received.some(message=>message[0]==='/preview/play'));
+    const play=received.find(message=>message[0]==='/preview/play');
+    assert.deepEqual(play.slice(1,4),[130,8,77]);
+    const ws2=new WebSocket(url.replace('http:','ws:'));sockets.push(ws2);
+    const snapshot=await new Promise(resolve=>ws2.once('message',raw=>resolve(JSON.parse(raw))));
+    assert.equal(snapshot.type,'state');assert.equal(snapshot.data.status,'ready');
+    ws.send(JSON.stringify({action:'render/start',params:{count:1}}));
+    const render=await until(()=>received.find(message=>message[0]==='/render/start'));
+    const [renderDir,id]=render.slice(-2);
+    fs.mkdirSync(path.join(renderDir,'batch.json')); // Deliberate filesystem failure, not a transport mock.
+    feedback.send('/render/done',id,0,1,0);
+    const done=await until(()=>events.find(event=>event.type==='renderDone'));
+    assert.equal(done.data.manifestWritten,false);
+    assert.equal(done.data.failures,1);
+    assert.equal((await (await fetch(url+'/api/status')).json()).renderRunning,false);
+    assert.equal(child.exitCode,null,'Manifest write failure must not crash Node');
+  } finally {
+    for(const ws of sockets)ws.terminate();
+    child.kill('SIGTERM');await new Promise(resolve=>child.exitCode!==null?resolve():child.once('exit',resolve));
+    fakeSC.close();feedback.close();fs.rmSync(dir,{recursive:true,force:true});
+  }
+});

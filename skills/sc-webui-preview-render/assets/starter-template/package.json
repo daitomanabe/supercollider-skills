@@ -1,0 +1,25 @@
+{
+  "name": "sc-webui-starter",
+  "private": true,
+  "version": "1.0.0",
+  "description": "Starter template for SuperCollider + WebUI preview/render tools",
+  "scripts": {
+    "start": "./start.sh",
+    "generate": "node scripts/generate-sc.js",
+    "server": "node scripts/generate-sc.js && node server.js",
+    "test": "node --test tests/contract.test.js tests/transport.test.js",
+    "test:integration": "python3 tests/integration.py",
+    "test:browser": "node tests/browser.js"
+  },
+  "dependencies": {
+    "express": "^4.21.0",
+    "node-osc": "^9.1.0",
+    "ws": "^8.18.0"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "overrides": {
+    "qs": "6.16.0"
+  }
+}

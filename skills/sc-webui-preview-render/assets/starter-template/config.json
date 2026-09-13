@@ -1,0 +1,6 @@
+{
+  "httpPort": 48761,
+  "feedbackPort": 48762,
+  "languagePort": 48763,
+  "audioPort": 48764
+}
