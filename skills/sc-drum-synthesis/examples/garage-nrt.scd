@@ -130,7 +130,10 @@ try {
     score.add([loopDur + tail, [\c_set, 0, 0]]);
     score.sort;
 
-    score.recordNRT(outputFilePath: stemPath, sampleRate: sr, headerFormat: "WAV", sampleFormat: "float",
+    // An explicit score file: the default name comes from UniqueID, which starts at 1000 in every sclang, so
+    // renders running at the same time would overwrite each other's scores.
+    score.recordNRT(oscFilePath: stemPath ++ ".osc", outputFilePath: stemPath, sampleRate: sr, headerFormat: "WAV",
+        sampleFormat: "float",
         options: ServerOptions.new.numOutputBusChannels_(voices.size * 2).numInputBusChannels_(0).sampleRate_(sr),
         duration: loopDur + tail,
         action: { |status|
@@ -157,7 +160,7 @@ try {
                     frame = frame + (chunk.size div: nCh);
                 };
                 sf.close;
-                File.delete(stemPath);
+                File.delete(stemPath); File.delete(stemPath ++ ".osc");
                 (sr div: 10 * 2).do { |k| tailPeak = tailPeak.max(mix[mix.size - 1 - k].abs) };
                 if(tailPeak > 1e-4) { Error("Tail still sounding at render end; raise `tail`").throw };
                 y = wrap.(mix, loopFrames * 2);

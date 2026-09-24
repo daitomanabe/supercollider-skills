@@ -46,6 +46,8 @@ Swing affects timing, not just the selected steps. Apply velocity and microtimin
 
 `garage-nrt.scd` writes each voice as one character per sixteenth: `X` accent (1.0), `x` normal (0.78), `o` ghost (0.42), `.` rest, and `2`-`6` for a roll of that many evenly spaced hits inside the step, rising from 0.5 to 0.85. A 16-character string is one bar and a 32-character string two bars; both repeat. A per-bar override replaces one voice for one bar, which is how fills and a bar-1 crash are placed. Velocities get a seeded ±8% jitter.
 
+`trap-se-nrt.scd` adds `s`, a normal-velocity note that slides from the previous note of a mono voice.
+
 Swing moves odd sixteenths only: an odd step starts `(swing - 0.5) * 2 * stepDur` late, so 0.5 is straight and 0.62 is the garage shuffle. Rolls inside a swung step move with it.
 
 ## Hat choke
@@ -57,6 +59,14 @@ Choke makes the pattern decide how long an open hat sounds. Leave at least two s
 ## UK garage (2-step) in the example
 
 132 BPM, swing 0.62. Kick on 0 and 10 in bar A and on 0, 7, 10, and 13 in bar B. A tight clap and a dry rim together on 4 and 12, with a ghost rim on the last sixteenth of bar B. Closed hats on the off-eighths (2, 6, 10, 14) and the swung sixteenth after each, an open hat on 14 of bar B. Crash on bar 1. Bar 4 adds a soft clap on 14; bar 8 thins the kick and rolls the rim into the next downbeat.
+
+## Mono bass lines
+
+`trap-se-nrt.scd` gives a mono voice a `notes` list: its n-th hit plays `notes[n]` semitones above the voice's `freq`, cycling. Each note lasts until the voice's next note, capped at 4 beats for the 808 and 2 for the synth bass, and ends with a 12 ms fade, so notes never overlap; the last note of the loop runs into the first. An `s` hit starts at the previous note's pitch (`from`, in semitones) and glides over `glide` seconds, without the 808's attack punch. The approved line is in F (43.65 Hz, F1), a 2-bar pattern with hits on sixteenths 0, 6, 10 and 0, 3, 10, 12 (the last one sliding), playing 0, 0, 3, 0, 5, -2, 0 semitones. The synth bass plays a busier line an octave up (F3) and turns its sub off when layered over the 808.
+
+## Effects at the head of a loop
+
+A trap drop marks bar 1 with an impact and a downlifter on the downbeat, together with the kick and the 808; the approved loops have no crash on that bar. A riser that ends exactly at the loop point leads back into the head: in `trap-se-nrt.scd`, a 2-bar riser on bar 7 (`drop`) or a 4-bar riser on bar 5 (`scifi`), whose echoes fold onto bar 1 when the loop is wrapped. An 8-bar downlifter (`sweep`) spans the whole loop and restarts with each repeat.
 
 ## Fills
 

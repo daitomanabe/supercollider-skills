@@ -10,7 +10,7 @@ From the skill directory:
 python3 scripts/verify_examples.py
 ```
 
-This runs the three NRT examples and repeats the seeded drum and garage renders in a temporary directory. It selects a checked free UDP port for each sclang process and uses an explicit temporary class configuration with `-a` so the user's configured extension paths are not loaded. It cleans up only its own process group after success, timeout, errors, Ctrl-C, or SIGTERM. On Linux it supplies the offscreen Qt setting when none is configured. Class isolation is not a security sandbox; intentionally detached descendants are outside process-group cleanup. NRT scsynth consumes a score file without opening an audio device or network port.
+This runs the NRT examples in a temporary directory: the drum gallery, the garage loop (dry and processed), and the trap loop twice each for same-seed identity, the sidechain graph, and four effect presets, one of them at 120 BPM to check that lengths follow the tempo. It selects a checked free UDP port for each sclang process and uses an explicit temporary class configuration with `-a` so the user's configured extension paths are not loaded. It cleans up only its own process group after success, timeout, errors, Ctrl-C, or SIGTERM. On Linux it supplies the offscreen Qt setting when none is configured. Class isolation is not a security sandbox; intentionally detached descendants are outside process-group cleanup. NRT scsynth consumes a score file without opening an audio device or network port.
 
 To retain WAVs for listening:
 
@@ -44,7 +44,7 @@ For RT setup, send the definitions, wait for server synchronization, create priv
 
 A realtime server's definitions, groups, and buffers are not automatically available to NRT. Put `\d_recv` for each SynthDef, group creation, node events, buffer operations where needed, and an end event into the Score. Sort the score and supply an explicit duration. `Score.new` creates its default group; custom groups still need score commands.
 
-`Score.recordNRT` has its own `sampleRate` argument; set it explicitly rather than relying on `ServerOptions.sampleRate` alone. A nil OSC-file path lets Score choose a unique temporary filename; a shared fixed path such as `/tmp/x.osc` races across renders. CLI examples inspect the callback exit status and exit the dedicated sclang process after completion. Do not put `0.exit` into a reusable interactive rendering function, because that would terminate its caller's language session.
+`Score.recordNRT` has its own `sampleRate` argument; set it explicitly rather than relying on `ServerOptions.sampleRate` alone. With a nil `oscFilePath` it writes the score to `PathName.tmp +/+ "temp_oscscore" ++ UniqueID.next`, and `UniqueID` starts at 1000 in every sclang process, so sclang processes rendering at the same time write the same score files: on SC 3.14.1, three of five concurrent renders failed. The examples pass an `oscFilePath` derived from their output path and delete it afterwards; do the same, and name temporary WAVs per output. A shared fixed path such as `/tmp/x.osc` races the same way. CLI examples inspect the callback exit status and exit the dedicated sclang process after completion. Do not put `0.exit` into a reusable interactive rendering function, because that would terminate its caller's language session.
 
 NRT duration is quantized by processing blocks. On the verified runtime, a requested 18 seconds at 48 kHz with 64-frame blocks produced 864,064 frames, one block beyond 18 seconds; the four-second example similarly produced 192,064 frames. The verifier accepts at most one block of duration difference. For sample-exact DAW loops, verify the actual frame count and intentionally crop/wrap the tail to the requested sample count.
 
@@ -62,9 +62,15 @@ Render voice k to output channels 2k and 2k+1 (`numOutputBusChannels = 2 * voice
 
 `assets/fx.scd` returns `(def: fxStrip, presets: (kick: ..., snare: ..., clap: ..., hat: ..., ohat: ..., crash: ...))`. Route each processed voice to a private stereo bus (here 64 + 2k), create one strip per voice at time 0 in a group added after the source group (`[\g_new, 2000, 3, 1]`), and let the strip write the voice's stem to 2k, 2k+1; the stem-based mix targets then apply unchanged. `inGain` in each preset assumes the skill voice at its default `amp` and velocity 0.78; recalibrate it from a raw-peak render if a voice's level or parameters change. Reverb tails need a longer render tail (5 s for the presets), and one-shot slots of 6 s. `garage-nrt.scd` with `fx` shows the routing.
 
+## Sound effects and bass in loops
+
+The effects in `assets/se_bass.scd` take `beat` (seconds per beat) and lengths in beats, so one preset serves any tempo; send `\beat, 60 / bpm` with every event (voices without that control ignore it). Render a tail that covers the longest ring-out past the loop end, 5 s for the trap loops, where a riser ending on the loop point folds its echoes onto bar 1 and leads into the impact. Mix effects by their RMS over the bars they play, not by peak: `trap-se-nrt.scd` uses impact -2, downlifters -5 to -7, riser -5, 808 -1, and synth bass -8 dB against the kick's peak, which brings each effect's RMS over the bars it plays to within about 10 dB of the kick's (the lo-fi dive matches it); at -12 dB the riser was inaudible under the 808. Rendering per-voice stems makes that measurable: sum each stem's squares in the mixing pass. Mono voices (`bass808`, `bassSynth`) get one note at a time; see [patterns](patterns.md#mono-bass-lines).
+
 ## One-shot batches for listening
 
 Render many one-shots in one NRT pass: start one hit per fixed slot (for example every 3.5 s, a whole number of 64-sample blocks at 48 kHz), then read each slot, trim at its last non-zero sample, and peak-normalize. Fail the batch if a slot still sounds in its last 0.1 s, since the next slot would contain the tail. Present the files one by one with good/bad ratings; a clear rating per sound is more useful than a verdict on a loop.
+
+Long effects need longer slots (15 s covers 8 bars at 140 BPM) and a different trim: reverb tails approach zero slowly, so trim 20 ms after the level falls 70 dB below the peak and fade over those 20 ms, as `se-nrt.scd` does. A slot that starts on a whole number of 64-sample blocks renders the same samples as a lone render starting at time 0.
 
 ## Audio acceptance
 

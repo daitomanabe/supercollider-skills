@@ -39,9 +39,12 @@ try {
     score.add([18, [\c_set, 0, 0]]);
     score.sort;
     options = ServerOptions.new.numOutputBusChannels_(2).numInputBusChannels_(0).sampleRate_(48000);
-    score.recordNRT(outputFilePath: outPath, sampleRate: 48000, headerFormat: "WAV", sampleFormat: "int24",
-        options: options, duration: 18,
+    // An explicit score file: the default name comes from UniqueID, which starts at 1000 in every sclang, so
+    // renders running at the same time would overwrite each other's scores.
+    score.recordNRT(oscFilePath: outPath ++ ".osc", outputFilePath: outPath, sampleRate: 48000, headerFormat: "WAV",
+        sampleFormat: "int24", options: options, duration: 18,
         action: { |status|
+            File.delete(outPath ++ ".osc");
             if((status == 0) and: { File.exists(outPath) }) { "RENDER_OK drums 18s".postln; 0.exit }
             { "RENDER_FAILED".postln; 1.exit }
         });

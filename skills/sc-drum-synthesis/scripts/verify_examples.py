@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
-"""Render the stock-core examples and verify audible output, routing, and the seamless garage loop."""
+"""Render the stock-core examples and verify audible output, routing, the seamless garage and trap loops, and the
+sound-effect presets."""
 from __future__ import annotations
 
 import argparse
@@ -100,14 +101,15 @@ def render(sclang: str, library: Path, example: str, output: Path, seed: int = 4
     return log
 
 
-def load_wav(path: Path, seconds: float) -> tuple[list[float], bytes, dict]:
+def load_wav(path: Path, seconds: float | None) -> tuple[list[float], bytes, dict]:
+    """Decode stereo 24-bit 48 kHz PCM; `seconds` None skips the exact-duration check (trimmed one-shots)."""
     with wave.open(str(path), 'rb') as wav:
         channels, width, rate, count = (wav.getnchannels(), wav.getsampwidth(),
                                         wav.getframerate(), wav.getnframes())
         raw = wav.readframes(count)
     if (channels, width, rate) != (2, 3, 48000):
         raise RuntimeError(f'{path.name}: expected stereo 24-bit 48 kHz WAV.')
-    if abs(count / rate - seconds) > 64 / rate + 1e-6:
+    if seconds is not None and abs(count / rate - seconds) > 64 / rate + 1e-6:
         raise RuntimeError(f'{path.name}: unexpected duration {count / rate}.')
     values = [int.from_bytes(raw[i:i + 3], 'little', signed=True) / 8388608
               for i in range(0, len(raw), 3)]
@@ -141,10 +143,17 @@ def verify(args: argparse.Namespace, output: Path) -> dict:
     library = class_library(args.class_library)
     version = subprocess.check_output([sclang, '-v'], text=True).strip()
     output.mkdir(parents=True, exist_ok=True)
-    gallery_a, gallery_b, ducking, garage_a, garage_b, fx_a, fx_b = [output / name for name in (
+    gallery_a, gallery_b, ducking, garage_a, garage_b, fx_a, fx_b, trap_a, trap_b = [output / name for name in (
         'gallery-42a.wav', 'gallery-42b.wav', 'sidechain.wav', 'garage-42a.wav', 'garage-42b.wav',
-        'garage-fx-42a.wav', 'garage-fx-42b.wav')]
-    for path in (gallery_a, gallery_b, ducking, garage_a, garage_b, fx_a, fx_b):
+        'garage-fx-42a.wav', 'garage-fx-42b.wav', 'trap-drop-42a.wav', 'trap-drop-42b.wav')]
+    # Sound-effect presets: (file, preset, bpm, shortest and longest acceptable length in seconds). Lengths follow
+    # the musical length (8 bars; the 8 s impact ring-out; 2 bars plus a 1-bar tail) and must stretch with bpm.
+    se_cases = [('se-down_trap-pump.wav', 'down_trap-pump', 140, 13.6, 13.9),
+                ('se-impact_boom-a.wav', 'impact_boom', 140, 6.5, 8.05),
+                ('se-impact_boom-b.wav', 'impact_boom', 140, 6.5, 8.05),
+                ('se-rise_2bar-120.wav', 'rise_2bar', 120, 5.3, 6.05)]
+    for path in (gallery_a, gallery_b, ducking, garage_a, garage_b, fx_a, fx_b, trap_a, trap_b,
+                 *(output / case[0] for case in se_cases)):
         if path.exists():
             raise RuntimeError(f'{path.name} already exists; use a fresh output directory.')
     render(sclang, library, 'drums-nrt.scd', gallery_a)
@@ -154,6 +163,10 @@ def verify(args: argparse.Namespace, output: Path) -> dict:
     render(sclang, library, 'garage-nrt.scd', garage_b)
     render(sclang, library, 'garage-nrt.scd', fx_a, extra=('fx',))
     render(sclang, library, 'garage-nrt.scd', fx_b, extra=('fx',))
+    trap_log = render(sclang, library, 'trap-se-nrt.scd', trap_a, extra=('drop',))
+    render(sclang, library, 'trap-se-nrt.scd', trap_b, extra=('drop',))
+    for name, preset, bpm, _, _ in se_cases:
+        render(sclang, library, 'se-nrt.scd', output / name, seed=1, extra=(preset, str(bpm)))
     gallery, pcm_a, gallery_info = load_wav(gallery_a, 18)
     _, pcm_b, _ = load_wav(gallery_b, 18)
     if pcm_a != pcm_b:
@@ -175,9 +188,9 @@ def verify(args: argparse.Namespace, output: Path) -> dict:
     recovery = db(recovered / baseline)
     if reduction > -3 or abs(recovery) > 0.25:
         raise RuntimeError(f'Ducking/recovery failed: reduction={reduction} dB, recovery={recovery} dB.')
-    # Garage loop, dry and through fxStrip: exactly 8 bars at 132 BPM, reproducible, no step at the loop seam.
-    def check_loop(label, path_a, path_b):
-        frames = round(8 * 4 * 60 / 132 * 48000)
+    # Garage loop (dry and through fxStrip) and trap loop: exactly 8 bars, reproducible, no step at the loop seam.
+    def check_loop(label, path_a, path_b, bpm):
+        frames = round(8 * 4 * 60 / bpm * 48000)
         mono, pcm_a, info = load_wav(path_a, frames / 48000)
         _, pcm_b, _ = load_wav(path_b, frames / 48000)
         if info['frames'] != frames:
@@ -191,17 +204,33 @@ def verify(args: argparse.Namespace, output: Path) -> dict:
             raise RuntimeError(f'{label}: loop seam step {seam:.4f} exceeds the 99.9th percentile step {typical:.4f}.')
         return {**info, 'seam_step': round(seam, 5), 'p999_step': round(typical, 5),
                 'same_seed_pcm_sha256': hashlib.sha256(pcm_a).hexdigest()}
-    garage_report = check_loop('garage', garage_a, garage_b)
-    fx_report = check_loop('garage fx', fx_a, fx_b)
+    garage_report = check_loop('garage', garage_a, garage_b, 132)
+    fx_report = check_loop('garage fx', fx_a, fx_b, 132)
     voices = {line.split()[1]: line.split()[2] for line in garage_log.splitlines() if line.startswith('VOICE ')}
     if sorted(voices) != ['clap', 'crash', 'hat', 'kick', 'ohat', 'rim']:
         raise RuntimeError(f'garage: unexpected voice report {voices}.')
+    trap_report = check_loop('trap drop', trap_a, trap_b, 140)
+    trap_voices = {line.split()[1]: line.split()[2] for line in trap_log.splitlines() if line.startswith('VOICE ')}
+    if sorted(trap_voices) != ['bass', 'clap', 'hat', 'impact', 'kick', 'lodown', 'rise', 'snare']:
+        raise RuntimeError(f'trap drop: unexpected voice report {trap_voices}.')
+    se_report = {}
+    for name, preset, bpm, shortest, longest in se_cases:
+        _, pcm, info = load_wav(output / name, None)
+        if not shortest <= info['duration_seconds'] <= longest:
+            raise RuntimeError(f"{name}: {info['duration_seconds']:.3f} s, expected {shortest}-{longest} s at {bpm} BPM.")
+        if abs(info['peak_dbfs'] + 1) > 0.05:
+            raise RuntimeError(f"{name}: peak {info['peak_dbfs']} dBFS, expected -1.")
+        se_report[name] = {**info, 'pcm_sha256': hashlib.sha256(pcm).hexdigest()}
+    if se_report['se-impact_boom-a.wav']['pcm_sha256'] != se_report['se-impact_boom-b.wav']['pcm_sha256']:
+        raise RuntimeError('impact_boom: the same seed produced different PCM within this runtime.')
     return {'status': 'passed', 'supercollider': version, 'stock_class_library_only': True,
             'gallery': gallery_info, 'voices': voice_info,
             'same_seed_pcm_sha256': hashlib.sha256(pcm_a).hexdigest(),
             'sidechain': {**sidechain_info, 'carrier_reduction_db': reduction, 'carrier_recovery_db': recovery},
             'garage': {**garage_report, 'voice_peaks': voices},
             'garage_fx': fx_report,
+            'trap_drop': {**trap_report, 'voice_peaks': trap_voices},
+            'sound_effects': se_report,
             'listening_checked': False, 'hardware_output_checked': False}
 
 

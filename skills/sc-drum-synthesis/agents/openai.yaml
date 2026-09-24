@@ -1,4 +1,4 @@
 interface:
   display_name: "SC Drum Synthesis"
-  short_description: "Design and verify SuperCollider drum voices and beats"
+  short_description: "Design and verify SuperCollider drums, effects, and bass"
   default_prompt: "Use $sc-drum-synthesis to build a short stock-SuperCollider drum pattern and verify its NRT output."
