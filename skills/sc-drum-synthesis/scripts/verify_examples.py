@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Render the stock-core examples and verify audible output and routing behavior."""
+"""Render the stock-core examples and verify audible output, routing, and the seamless garage loop."""
 from __future__ import annotations
 
 import argparse
@@ -141,13 +141,16 @@ def verify(args: argparse.Namespace, output: Path) -> dict:
     library = class_library(args.class_library)
     version = subprocess.check_output([sclang, '-v'], text=True).strip()
     output.mkdir(parents=True, exist_ok=True)
-    gallery_a, gallery_b, ducking = [output / name for name in ('gallery-42a.wav', 'gallery-42b.wav', 'sidechain.wav')]
-    for path in (gallery_a, gallery_b, ducking):
+    gallery_a, gallery_b, ducking, garage_a, garage_b = [output / name for name in (
+        'gallery-42a.wav', 'gallery-42b.wav', 'sidechain.wav', 'garage-42a.wav', 'garage-42b.wav')]
+    for path in (gallery_a, gallery_b, ducking, garage_a, garage_b):
         if path.exists():
             raise RuntimeError(f'{path.name} already exists; use a fresh output directory.')
     render(sclang, library, 'drums-nrt.scd', gallery_a)
     render(sclang, library, 'drums-nrt.scd', gallery_b)
     render(sclang, library, 'sidechain-nrt.scd', ducking)
+    garage_log = render(sclang, library, 'garage-nrt.scd', garage_a)
+    render(sclang, library, 'garage-nrt.scd', garage_b)
     gallery, pcm_a, gallery_info = load_wav(gallery_a, 18)
     _, pcm_b, _ = load_wav(gallery_b, 18)
     if pcm_a != pcm_b:
@@ -169,10 +172,28 @@ def verify(args: argparse.Namespace, output: Path) -> dict:
     recovery = db(recovered / baseline)
     if reduction > -3 or abs(recovery) > 0.25:
         raise RuntimeError(f'Ducking/recovery failed: reduction={reduction} dB, recovery={recovery} dB.')
+    # Garage loop: exactly 8 bars at 132 BPM, reproducible, and no step at the loop seam.
+    frames = round(8 * 4 * 60 / 132 * 48000)
+    garage, pcm_ga, garage_info = load_wav(garage_a, frames / 48000)
+    _, pcm_gb, _ = load_wav(garage_b, frames / 48000)
+    if garage_info['frames'] != frames:
+        raise RuntimeError(f"garage: {garage_info['frames']} frames, expected exactly {frames}.")
+    if pcm_ga != pcm_gb:
+        raise RuntimeError('garage: the same seed produced different PCM within this runtime.')
+    steps = sorted(abs(b - a) for a, b in zip(garage, garage[1:]))
+    typical = steps[int(0.999 * (len(steps) - 1))]
+    seam = abs(garage[0] - garage[-1])
+    if seam > typical:
+        raise RuntimeError(f'garage: loop seam step {seam:.4f} exceeds the 99.9th percentile step {typical:.4f}.')
+    voices = {line.split()[1]: line.split()[2] for line in garage_log.splitlines() if line.startswith('VOICE ')}
+    if sorted(voices) != ['clap', 'crash', 'hat', 'kick', 'ohat', 'rim']:
+        raise RuntimeError(f'garage: unexpected voice report {voices}.')
     return {'status': 'passed', 'supercollider': version, 'stock_class_library_only': True,
             'gallery': gallery_info, 'voices': voice_info,
             'same_seed_pcm_sha256': hashlib.sha256(pcm_a).hexdigest(),
             'sidechain': {**sidechain_info, 'carrier_reduction_db': reduction, 'carrier_recovery_db': recovery},
+            'garage': {**garage_info, 'seam_step': round(seam, 5), 'p999_step': round(typical, 5), 'voice_peaks': voices,
+                       'same_seed_pcm_sha256': hashlib.sha256(pcm_ga).hexdigest()},
             'listening_checked': False, 'hardware_output_checked': False}
 
 

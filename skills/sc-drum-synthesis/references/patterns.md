@@ -42,6 +42,22 @@ Positions below are zero-based sixteenth-note indices for one 4/4 bar. They are 
 
 Swing affects timing, not just the selected steps. Apply velocity and microtiming deliberately and keep the bar duration unchanged when loop alignment matters.
 
+## Pattern strings
+
+`garage-nrt.scd` writes each voice as one character per sixteenth: `X` accent (1.0), `x` normal (0.78), `o` ghost (0.42), `.` rest, and `2`-`6` for a roll of that many evenly spaced hits inside the step, rising from 0.5 to 0.85. A 16-character string is one bar and a 32-character string two bars; both repeat. A per-bar override replaces one voice for one bar, which is how fills and a bar-1 crash are placed. Velocities get a seeded ±8% jitter.
+
+Swing moves odd sixteenths only: an odd step starts `(swing - 0.5) * 2 * stepDur` late, so 0.5 is straight and 0.62 is the garage shuffle. Rolls inside a swung step move with it.
+
+## Hat choke
+
+A drummer's hi-hat is one instrument: a new closed or open hit cuts the one still ringing. Give each hat node an explicit ID, and at every hat hit send `n_set <previous> gate 0` if the previous hat is still inside its decay. The skill hats close within 15 ms on `gate` 0. For a loop, also choke the last hat of the loop at the time of the first hat plus the loop length, or the folded tail rings over the first bar.
+
+Choke makes the pattern decide how long an open hat sounds. Leave at least two steps after an open hat; a soft closed hat on the next step cuts it to one step. The garage loop drops the closed hat after its bar-2 open hat, so the open hat rings to the next bar.
+
+## UK garage (2-step) in the example
+
+132 BPM, swing 0.62. Kick on 0 and 10 in bar A and on 0, 7, 10, and 13 in bar B. A tight clap and a dry rim together on 4 and 12, with a ghost rim on the last sixteenth of bar B. Closed hats on the off-eighths (2, 6, 10, 14) and the swung sixteenth after each, an open hat on 14 of bar B. Crash on bar 1. Bar 4 adds a soft clap on 14; bar 8 thins the kick and rolls the rim into the next downbeat.
+
 ## Fills
 
 A useful restrained strategy adds snares to the last bar of a four-bar phrase while retaining the kick and hat framework. Build a crescendo and increase subdivisions toward the phrase boundary. This is one strategy; replacing or dropping kicks/hats can be appropriate for a break or a stronger fill.

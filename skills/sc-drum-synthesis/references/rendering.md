@@ -10,7 +10,7 @@ From the skill directory:
 python3 scripts/verify_examples.py
 ```
 
-This runs both NRT examples and repeats the seeded drum render in a temporary directory. It selects a checked free UDP port for each sclang process and uses an explicit temporary class configuration with `-a` so the user's configured extension paths are not loaded. It cleans up only its own process group after success, timeout, errors, Ctrl-C, or SIGTERM. On Linux it supplies the offscreen Qt setting when none is configured. Class isolation is not a security sandbox; intentionally detached descendants are outside process-group cleanup. NRT scsynth consumes a score file without opening an audio device or network port.
+This runs the three NRT examples and repeats the seeded drum and garage renders in a temporary directory. It selects a checked free UDP port for each sclang process and uses an explicit temporary class configuration with `-a` so the user's configured extension paths are not loaded. It cleans up only its own process group after success, timeout, errors, Ctrl-C, or SIGTERM. On Linux it supplies the offscreen Qt setting when none is configured. Class isolation is not a security sandbox; intentionally detached descendants are outside process-group cleanup. NRT scsynth consumes a score file without opening an audio device or network port.
 
 To retain WAVs for listening:
 
@@ -49,6 +49,18 @@ A realtime server's definitions, groups, and buffers are not automatically avail
 NRT duration is quantized by processing blocks. On the verified runtime, a requested 18 seconds at 48 kHz with 64-frame blocks produced 864,064 frames, one block beyond 18 seconds; the four-second example similarly produced 192,064 frames. The verifier accepts at most one block of duration difference. For sample-exact DAW loops, verify the actual frame count and intentionally crop/wrap the tail to the requested sample count.
 
 The stock [NRT guide](https://doc.sccode.org/Guides/Non-Realtime-Synthesis.html) describes the distinction between language and server resources, score event times, and `recordNRT` parameters.
+
+## Seamless fixed-length loops
+
+A loop file must be an exact number of frames, and hits near the end must not be cut. Render the loop plus a tail long enough for every voice to fall silent (3 s covers a 1.6 s crash), confirm the last 0.1 s of the render is silent, then add every sample past the loop length back onto the start and crop. `garage-nrt.scd` does this with a self-checked `wrap` function and writes `round(bars * 4 * 60 / bpm * sampleRate)` frames. Verify the step across the seam (last sample to first) against the 99.9th percentile of ordinary sample-to-sample steps; a cut tail shows up there as a click. Choke across the seam as described in [patterns](patterns.md).
+
+## Per-voice stems and mix targets
+
+Render voice k to output channels 2k and 2k+1 (`numOutputBusChannels = 2 * voices`). The stems give each voice's peak for an audibility check and let the mix be set by targets instead of hand-tuned `amp` values: in a first pass read the peak of each voice; in a second pass sum the stems with gain `target.dbamp / peak`, where the target is the voice's loudest hit in dB relative to the kick. The garage loop uses kick 0, clap -3, rim -5, closed hat -12, open hat -11, crash -9. Then normalize the sum (here to -1 dBFS peak). Peak targets survive timbre changes; they are not loudness matching, so long sounds such as open hats and crashes still need listening.
+
+## One-shot batches for listening
+
+Render many one-shots in one NRT pass: start one hit per fixed slot (for example every 3.5 s, a whole number of 64-sample blocks at 48 kHz), then read each slot, trim at its last non-zero sample, and peak-normalize. Fail the batch if a slot still sounds in its last 0.1 s, since the next slot would contain the tail. Present the files one by one with good/bad ratings; a clear rating per sound is more useful than a verdict on a loop.
 
 ## Audio acceptance
 

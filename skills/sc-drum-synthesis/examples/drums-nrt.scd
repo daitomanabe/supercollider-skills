@@ -19,7 +19,8 @@ try {
     score = Score.new;
     defs.do { |def| score.add([0, [\d_recv, def.asBytes]]) };
     voices = [\drumKick, \drumSnare, \drumClap, \drumHatClosed, \drumHatOpen, \drumCrash];
-    levels = [0.35, 0.4, 0.45, 0.8, 0.55, 0.65];
+    // Peaks relative to the kick: snare -1, clap -2, closed hat -12, open hat -11, crash -9 dB (as in garage-nrt).
+    levels = [0.35, 0.22, 0.86, 0.47, 0.36, 0.073];
     addHit = { |time, index, velocity=0.8, pan=0|
         score.add([time, [\s_new, voices[index], -1, 0, 1,
             \amp, levels[index], \velocity, velocity, \pan, pan,
@@ -34,7 +35,7 @@ try {
         if(pos == 14) { addHit.(time, 4, 0.7, 0.15) };
         if((step >= 56) and: { pos % 2 == 1 }) { addHit.(time, 1, 0.25 + ((pos - 8) * 0.035), -0.1) };
     };
-    score.add([16, [\s_new, \drumCrash, -1, 0, 1, \amp, 0.5, \velocity, 0.85, \seed, seed + 16000]]);
+    score.add([16, [\s_new, \drumCrash, -1, 0, 1, \amp, 0.056, \velocity, 0.85, \seed, seed + 16000]]);
     score.add([18, [\c_set, 0, 0]]);
     score.sort;
     options = ServerOptions.new.numOutputBusChannels_(2).numInputBusChannels_(0).sampleRate_(48000);

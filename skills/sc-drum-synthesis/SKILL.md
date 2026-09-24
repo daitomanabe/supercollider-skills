@@ -1,6 +1,6 @@
 ---
 name: sc-drum-synthesis
-description: Design SuperCollider drum voices, velocity response, beat patterns, and percussion mixes. Use for synthesized kicks, snares, hats, claps, cymbals, and drum-focused NRT rendering.
+description: Design SuperCollider drum voices, velocity response, beat patterns, and percussion mixes. Use for synthesized kicks, snares, hats, claps, rims, cymbals, seamless drum loops, and drum-focused NRT rendering.
 ---
 
 # SuperCollider drum synthesis
@@ -9,19 +9,21 @@ Build or refine drum timbres and rhythms in stock SuperCollider. Preserve the re
 
 ## Choose the relevant material
 
-- Voice design, velocity, envelopes, spectral problems: [sound design](references/sound-design.md).
-- Density, complexity, reproducible patterns, and fills: [patterns](references/patterns.md).
-- Bus order, ducking, sample rate, NRT, and audio checks: [rendering and routing](references/rendering.md).
-- Working kick, snare, clap, closed/open hat, and crash definitions: [synthdefs.scd](assets/synthdefs.scd). The file returns an array of SynthDefs without booting or sending to a server.
-- Audible examples: [drums-nrt.scd](examples/drums-nrt.scd) renders a six-voice gallery and seeded beat; [sidechain-nrt.scd](examples/sidechain-nrt.scd) renders an ordered kick/music/ducking graph.
+- Voice design, velocity, envelopes, spectral problems, and what listening tests rejected: [sound design](references/sound-design.md).
+- Density, complexity, pattern strings, swing, hat choke, and fills: [patterns](references/patterns.md).
+- Bus order, ducking, stems and mix targets, seamless loops, one-shot batches, NRT, and audio checks: [rendering and routing](references/rendering.md).
+- Working kick, snare, clap, rim, closed/open hat, and crash definitions: [synthdefs.scd](assets/synthdefs.scd). The file returns an array of SynthDefs without booting or sending to a server.
+- Audible examples: [drums-nrt.scd](examples/drums-nrt.scd) renders a six-voice gallery and seeded beat; [sidechain-nrt.scd](examples/sidechain-nrt.scd) renders an ordered kick/music/ducking graph; [garage-nrt.scd](examples/garage-nrt.scd) renders a listening-approved 8-bar UK garage loop with choked hats, mix targets, and a seamless loop point.
+- Comparing renders with a reference one-shot library: [analyze_refs.py](scripts/analyze_refs.py) measures length, band energy, centroid, noisiness, pitch cues, and stereo width per file.
 
 ## Workflow
 
 1. Set the target groove, tempo, meter, output format, and whether the result is a loop or a piece with a decay tail. Infer reasonable defaults when the task supplies no preference.
 2. Start with the relevant voice(s). Check quiet and accented hits separately before mixing. Keep timbral velocity separate from output `amp` when independent level control matters.
-3. Use sample rate and device settings that the actual destination supports. The examples use 48 kHz, stereo, 24-bit WAV; this is an example format, not a universal DAW or Bluetooth requirement.
-4. For NRT, include every SynthDef and group in the score, use explicit event times and render duration, and inspect the process exit status and audio. For RT, finish asynchronous setup before scheduling sound and put source nodes before processors that read them.
-5. Verify voice audibility, peak/RMS, clipped samples, DC, duration, and any requested band balance. Mark listening and hardware-output checks separately; numerical analysis does not establish listening acceptance.
+3. When a reference library is available, measure it and your one-shots with the same features and tune toward its per-category medians before judging by ear. Offer one-shots individually for good/bad listening before building loops; a loop hides a bad timbre.
+4. Use sample rate and device settings that the actual destination supports. The examples use 48 kHz, stereo, 24-bit WAV; this is an example format, not a universal DAW or Bluetooth requirement.
+5. For NRT, include every SynthDef and group in the score, use explicit event times and render duration, and inspect the process exit status and audio. For RT, finish asynchronous setup before scheduling sound and put source nodes before processors that read them.
+6. Verify voice audibility, peak/RMS, clipped samples, DC, duration, and any requested band balance. Mark listening and hardware-output checks separately; numerical analysis does not establish listening acceptance.
 
 ## Avoid repeat failures
 
@@ -30,3 +32,10 @@ Build or refine drum timbres and rhythms in stock SuperCollider. Preserve the re
 - Check the oscillator's spectrum before filtering it. Sines below a high-pass cutoff become attenuated; high sine partials, resonators, noise, and pulse waves can all be valid metallic sources.
 - `Env.perc` accepts a control/UGen duration inside a SynthDef. Keep segment times positive; use `timeScale` when scaling the whole envelope is intended.
 - Scope cleanup to the processes, groups, nodes, buses, and OSC handlers created by this task. Check TCP/UDP ports before launch. A process name is not an ownership record.
+- Six squares at 0.9-2.3 kHz behind a 12 dB/oct high-pass leave sparse pitched partials below 5 kHz; listeners heard a cowbell. Use the TR-808 square set (205-800 Hz), whose odd harmonics are dense above 7 kHz, behind a 24 dB/oct high-pass.
+- A bank of `Ringz` resonators is a bell, not a crash: one put 99.8% of its energy into 20 FFT bins. A crash needs broadband noise plus dense metal.
+- Claps that share fixed burst timing differ only in band and sound alike. Vary burst count, spacing (4-19 ms), band, and tail length.
+- Rims made of sine partials carry a pitch (autocorrelation 0.69-0.87). For a dry, unpitched rim, knock with band-passed noise and colour it with modes that ring only a few milliseconds.
+- Hats of ~35 ms read as percussion. Closed 70-120 ms and open 0.5-0.9 s passed, with every hat hit choking the ringing hat, also across a loop seam.
+- sclang binary operators have no precedence: `a + b * 2` is `(a + b) * 2`. Parenthesize.
+- Formatting an Event or long collection into a string truncates it. Print explicit `key=value` pairs when a log is parsed.
