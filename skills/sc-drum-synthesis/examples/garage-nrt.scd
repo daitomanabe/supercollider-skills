@@ -1,11 +1,13 @@
-// Usage: sclang -D -u CHECKED_FREE_UDP_PORT garage-nrt.scd /absolute/output.wav [seed]
+// Usage: sclang -D -u CHECKED_FREE_UDP_PORT garage-nrt.scd /absolute/output.wav [seed] [fx]
 // An 8-bar UK garage (2-step) loop approved in listening tests: 132 BPM, 62% swing on odd sixteenths, a dry
 // rim under a tight clap on the backbeat, 808 hats that choke each other (also across the loop seam), a crash
 // on bar 1 and fills in bars 4 and 8. Each voice renders to its own stereo pair; the mixdown sets each voice's
 // loudest hit to a level relative to the kick, folds the decay tail back onto the start, and writes exactly
 // 8 bars as 48 kHz int24 WAV, so the file loops without a seam. Seed 1 reproduces the approved file.
+// With `fx`, every voice but the rim runs through its fxStrip preset (assets/fx.scd) before the stems; seed 1
+// then reproduces the approved processed version.
 (
-var sr = 48000, bars = 8, bpm = 132, swing = 0.62, tail = 3, outPath, stemPath, seed, defs, kit, mixTargets;
+var sr = 48000, bars = 8, bpm = 132, swing = 0.62, tail = 3, outPath, stemPath, seed, defs, kit, mixTargets, fx;
 var pat, barOver, voices, stepDur, swingOff, loopFrames, loopDur, hitsFor, charAt, wrap, events, score, lastHat;
 SystemClock.sched(120, { "[watchdog] forced exit".postln; 1.exit });
 try {
@@ -18,11 +20,22 @@ try {
     };
     if(File.exists(outPath) or: { File.exists(stemPath) }) { Error("Output exists; choose a new filename.").throw };
     seed = (thisProcess.argv.at(1) ? "1").asInteger;
+    if(thisProcess.argv.at(2) == "fx") {
+        fx = thisProcess.interpreter.executeFile(
+            (thisProcess.nowExecutingPath.dirname +/+ "../assets/fx.scd").standardizePath
+        )[\presets];
+        tail = 5;                                            // room for the reverb tails
+    };
     if("SC_SYNTH".getenv.notNil) { Score.program = "SC_SYNTH".getenv.shellQuote };
     TempoClock.default.tempo = 1;
     defs = thisProcess.interpreter.executeFile(
         (thisProcess.nowExecutingPath.dirname +/+ "../assets/synthdefs.scd").standardizePath
     );
+    if(fx.notNil) {
+        defs = defs.add(thisProcess.interpreter.executeFile(
+            (thisProcess.nowExecutingPath.dirname +/+ "../assets/fx.scd").standardizePath
+        )[\def]);
+    };
 
     // Voice k renders to channels 2k, 2k+1; this order also fixes the order of random draws.
     voices = [\clap, \crash, \hat, \kick, \ohat, \rim];
@@ -88,6 +101,13 @@ try {
 
     score = Score.new;
     defs.do { |d| score.add([0, [\d_recv, d.asBytes]]) };
+    // With fx, voice k writes to private bus 64 + 2k and a strip after the voices writes the stem to 2k, 2k+1.
+    if(fx.notNil) {
+        score.add([0, [\g_new, 2000, 3, 1]]);
+        voices.do { |v, k| fx[v] !? { |preset|
+            score.add([0, [\s_new, \fxStrip, 3000 + k, 0, 2000, \in, 64 + (2 * k), \out, 2 * k] ++ preset.asKeyValuePairs])
+        } };
+    };
     events.do { |e, k|
         var p = kit[e[1]], id = -1, msg;
         // Closed and open hat are one instrument: each hat hit chokes the hat still ringing.
@@ -96,7 +116,8 @@ try {
             id = 1000 + k;
             lastHat = [id, e[0] + p[\decay]];
         };
-        msg = [\s_new, p[\def], id, 0, 1, \out, voices.indexOf(e[1]) * 2, \velocity, e[2], \seed, 100000.rand];
+        msg = [\s_new, p[\def], id, 0, 1, \out, (voices.indexOf(e[1]) * 2) + (if(fx.notNil and: { fx[e[1]].notNil }) { 64 } { 0 }),
+            \velocity, e[2], \seed, 100000.rand];
         p.keysValuesDo { |key, v| if(key != \def) { msg = msg ++ [key, v] } };
         score.add([e[0], msg]);
     };

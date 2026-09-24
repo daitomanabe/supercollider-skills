@@ -5,7 +5,7 @@ SuperColliderで作曲、ドラム合成、WebUIによる試聴・書き出し�
 | Skill | 担当 |
 | --- | --- |
 | [sc-composition-toolkit](skills/sc-composition-toolkit/SKILL.md) | 作曲、SynthDef、Pattern、RT/NRT、音声検証、任意の既存toolkitとの連携 |
-| [sc-drum-synthesis](skills/sc-drum-synthesis/SKILL.md) | キック・スネア・クラップ・リム・ハットなどの音色設計、ビート、sidechain、継ぎ目のないループ、リファレンス比較 |
+| [sc-drum-synthesis](skills/sc-drum-synthesis/SKILL.md) | キック・スネア・クラップ・リム・ハットなどの音色設計、ビート、sidechain、継ぎ目のないループ、エフェクト処理、リファレンス比較 |
 | [sc-webui-preview-render](skills/sc-webui-preview-render/SKILL.md) | パラメータ定義を共有するブラウザUI、OSC、プレビュー、バッチレンダー |
 
 必要なskillだけを読み、詳しい手順はリンク先のreferencesへ進む構成です。既存の3つのskill名を維持しています。

@@ -85,9 +85,23 @@ Clap presets used in the approved loops (`drumClap` arguments; `g1`-`g3` default
 | Snap | 2600 | 0.3 | 0.004 | 2 (`g2` 0.5, `g3` 0) | 0.004 | 0.04 | 3000 |
 | Group | 1200 | 0.8 | 0.019 | 4 (`g4` 0.75) | 0.008 | 0.2 | 1500 |
 
+## Processing like produced one-shots
+
+Commercial one-shots are processed, and the processing leaves measurable traces (`analyze_refs.py`): the drop in the 30 ms after the peak, the decay knee (time from -20 to -40 dB over time from the peak to -20 dB; a dry exponential gives about 1, reverb or compression much more), stereo width of the tail, envelope echoes, kick harmonics (150-1000 Hz over 30-150 Hz in 50-200 ms), and the share of samples within 1 dB of the peak. Medians of the 2,576-file library against the dry skill voices:
+
+| Voice | Reference | Dry skill voice | Processing that closes the gap |
+|---|---|---|---|
+| Kick | peak/RMS 10.8 dB, harmonics -25 dB | 11.2 dB, -35 dB | Saturation, compression with a 10 ms attack |
+| Snare | drops 8 dB in 30 ms, lasts 202 ms, tail width 0.15 | drops 20 dB, 56 ms, mono | Softer attack, sustain boost, fast compression, short room |
+| Clap | knee 1.7, tail width 0.26 | 0.8, mono | Reverb, sustain boost |
+| Hats | tail width 0.06 (ambient-glitch packs ~0.7) | mono, peakier | Fast compression, chorus |
+| Crash | knee 1.4, tail width 0.29 | 1.06, mono | Chorus, large reverb |
+
+`assets/fx.scd` holds the strip and the presets that passed listening. Across punch, knee, tail width, peak-to-RMS, and length for six voices, 23 of 30 medians fall inside the reference interquartile ranges, against 20 dry. The snare changes most (56 to 261 ms, 30 ms drop 20 to 7 dB). The kick's post-peak drop stays below the references (about 3 dB against 7): it follows the synth envelope more than the strip. Delays were left off: most reference echoes are short reflections of 10-60 ms, and a tempo delay clouded the loops. Rims stayed dry at the listener's request.
+
 ## Measuring against references
 
-`scripts/analyze_refs.py OUT.jsonl DIR...` decodes every WAV with ffmpeg and writes one JSON line per file: length to -20/-40/-60 dB, time of the peak, band-energy shares (20-60, 60-150, 150-400, 400-1k, 1-3k, 3-6k, 6-12k, 12-20k Hz), centroid overall, in the first 30 ms and in 30-300 ms, spectral flatness (500 Hz-16 kHz), crest factor, kick pitch from zero crossings (0-20 ms and 50-150 ms), stereo width (1 - L/R correlation), the autocorrelation peak at 0.25-5 ms lags, and the energy share of the 20 strongest FFT bins. The last two are pitch cues: a pitched hit scores high on both. Categories come from file and folder names.
+`scripts/analyze_refs.py OUT.jsonl DIR...` decodes every WAV with ffmpeg and writes one JSON line per file: length to -20/-40/-60 dB, time of the peak, band-energy shares (20-60, 60-150, 150-400, 400-1k, 1-3k, 3-6k, 6-12k, 12-20k Hz), centroid overall, in the first 30 ms and in 30-300 ms, spectral flatness (500 Hz-16 kHz), crest factor, kick pitch from zero crossings (0-20 ms and 50-150 ms), stereo width (1 - L/R correlation), the autocorrelation peak at 0.25-5 ms lags, and the energy share of the 20 strongest FFT bins. The last two are pitch cues: a pitched hit scores high on both. Categories come from file and folder names. The processing traces are described in the section above.
 
 Compare medians and interquartile ranges per category, then tune toward them. A 55-pack commercial library (2,576 one-shots) measured, as medians:
 

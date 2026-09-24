@@ -13,8 +13,9 @@ Build or refine drum timbres and rhythms in stock SuperCollider. Preserve the re
 - Density, complexity, pattern strings, swing, hat choke, and fills: [patterns](references/patterns.md).
 - Bus order, ducking, stems and mix targets, seamless loops, one-shot batches, NRT, and audio checks: [rendering and routing](references/rendering.md).
 - Working kick, snare, clap, rim, closed/open hat, and crash definitions: [synthdefs.scd](assets/synthdefs.scd). The file returns an array of SynthDefs without booting or sending to a server.
-- Audible examples: [drums-nrt.scd](examples/drums-nrt.scd) renders a six-voice gallery and seeded beat; [sidechain-nrt.scd](examples/sidechain-nrt.scd) renders an ordered kick/music/ducking graph; [garage-nrt.scd](examples/garage-nrt.scd) renders a listening-approved 8-bar UK garage loop with choked hats, mix targets, and a seamless loop point.
-- Comparing renders with a reference one-shot library: [analyze_refs.py](scripts/analyze_refs.py) measures length, band energy, centroid, noisiness, pitch cues, and stereo width per file.
+- Processing each voice like a produced one-shot (transient shaper, saturation, compressor, EQ, chorus, delay and reverb sends) with listening-approved per-voice presets: [fx.scd](assets/fx.scd).
+- Audible examples: [drums-nrt.scd](examples/drums-nrt.scd) renders a six-voice gallery and seeded beat; [sidechain-nrt.scd](examples/sidechain-nrt.scd) renders an ordered kick/music/ducking graph; [garage-nrt.scd](examples/garage-nrt.scd) renders a listening-approved 8-bar UK garage loop with choked hats, mix targets, and a seamless loop point; its `fx` argument renders the approved processed version.
+- Comparing renders with a reference one-shot library: [analyze_refs.py](scripts/analyze_refs.py) measures length, band energy, centroid, noisiness, pitch cues, stereo width, and traces of processing (transient drop, decay knee, tail width, echoes, harmonics) per file.
 
 ## Workflow
 
@@ -39,3 +40,6 @@ Build or refine drum timbres and rhythms in stock SuperCollider. Preserve the re
 - Hats of ~35 ms read as percussion. Closed 70-120 ms and open 0.5-0.9 s passed, with every hat hit choking the ringing hat, also across a loop seam.
 - sclang binary operators have no precedence: `a + b * 2` is `(a + b) * 2`. Parenthesize.
 - Formatting an Event or long collection into a string truncates it. Print explicit `key=value` pairs when a log is parsed.
+- A negative argument default needs a space: `|thresh= -12|`. `thresh=-12` is a parse error (`=-` lexes as one operator). On a parse error sclang runs nothing, waits instead of exiting, and its buffered error text is lost when a timeout kills it; compile-check a script (`File.readAllString(path).compile`, then exit) when a render hangs silently.
+- `LeakDC.ar(sig)` defaults to coefficient 0.995, a high-pass near 38 Hz at 48 kHz that thins kick fundamentals when stacked. Use `LeakDC.ar(sig, 0.9995)` (~4 Hz) to remove DC after saturation.
+- Set compressor attack by role: a 10 ms attack lets a kick's transient through; on hats, claps, and snares a 5 ms attack left a spike in front of the squeezed body and raised the peak-to-RMS ratio, while 0.5 ms lowered it.

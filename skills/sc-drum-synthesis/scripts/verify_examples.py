@@ -65,7 +65,7 @@ def cleanup_group(process: subprocess.Popen) -> None:
     process.wait()
 
 
-def render(sclang: str, library: Path, example: str, output: Path, seed: int = 42) -> str:
+def render(sclang: str, library: Path, example: str, output: Path, seed: int = 42, extra: tuple = ()) -> str:
     # Ask the OS for a free ephemeral UDP port; never evict a listener.
     with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as probe:
         probe.bind(('0.0.0.0', 0))
@@ -81,7 +81,7 @@ def render(sclang: str, library: Path, example: str, output: Path, seed: int = 4
         config.write_text('includePaths:\n  - ' + json.dumps(str(library))
                           + '\nexcludePaths: []\npostInlineWarnings: false\n')
         command = [sclang, '-D', '-a', '-l', str(config), '-u', str(port),
-                   str(ROOT / 'examples' / example), str(output), str(seed)]
+                   str(ROOT / 'examples' / example), str(output), str(seed), *extra]
         process = subprocess.Popen(command, stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
                                    text=True, start_new_session=True, env=env)
         try:
@@ -141,9 +141,10 @@ def verify(args: argparse.Namespace, output: Path) -> dict:
     library = class_library(args.class_library)
     version = subprocess.check_output([sclang, '-v'], text=True).strip()
     output.mkdir(parents=True, exist_ok=True)
-    gallery_a, gallery_b, ducking, garage_a, garage_b = [output / name for name in (
-        'gallery-42a.wav', 'gallery-42b.wav', 'sidechain.wav', 'garage-42a.wav', 'garage-42b.wav')]
-    for path in (gallery_a, gallery_b, ducking, garage_a, garage_b):
+    gallery_a, gallery_b, ducking, garage_a, garage_b, fx_a, fx_b = [output / name for name in (
+        'gallery-42a.wav', 'gallery-42b.wav', 'sidechain.wav', 'garage-42a.wav', 'garage-42b.wav',
+        'garage-fx-42a.wav', 'garage-fx-42b.wav')]
+    for path in (gallery_a, gallery_b, ducking, garage_a, garage_b, fx_a, fx_b):
         if path.exists():
             raise RuntimeError(f'{path.name} already exists; use a fresh output directory.')
     render(sclang, library, 'drums-nrt.scd', gallery_a)
@@ -151,6 +152,8 @@ def verify(args: argparse.Namespace, output: Path) -> dict:
     render(sclang, library, 'sidechain-nrt.scd', ducking)
     garage_log = render(sclang, library, 'garage-nrt.scd', garage_a)
     render(sclang, library, 'garage-nrt.scd', garage_b)
+    render(sclang, library, 'garage-nrt.scd', fx_a, extra=('fx',))
+    render(sclang, library, 'garage-nrt.scd', fx_b, extra=('fx',))
     gallery, pcm_a, gallery_info = load_wav(gallery_a, 18)
     _, pcm_b, _ = load_wav(gallery_b, 18)
     if pcm_a != pcm_b:
@@ -172,19 +175,24 @@ def verify(args: argparse.Namespace, output: Path) -> dict:
     recovery = db(recovered / baseline)
     if reduction > -3 or abs(recovery) > 0.25:
         raise RuntimeError(f'Ducking/recovery failed: reduction={reduction} dB, recovery={recovery} dB.')
-    # Garage loop: exactly 8 bars at 132 BPM, reproducible, and no step at the loop seam.
-    frames = round(8 * 4 * 60 / 132 * 48000)
-    garage, pcm_ga, garage_info = load_wav(garage_a, frames / 48000)
-    _, pcm_gb, _ = load_wav(garage_b, frames / 48000)
-    if garage_info['frames'] != frames:
-        raise RuntimeError(f"garage: {garage_info['frames']} frames, expected exactly {frames}.")
-    if pcm_ga != pcm_gb:
-        raise RuntimeError('garage: the same seed produced different PCM within this runtime.')
-    steps = sorted(abs(b - a) for a, b in zip(garage, garage[1:]))
-    typical = steps[int(0.999 * (len(steps) - 1))]
-    seam = abs(garage[0] - garage[-1])
-    if seam > typical:
-        raise RuntimeError(f'garage: loop seam step {seam:.4f} exceeds the 99.9th percentile step {typical:.4f}.')
+    # Garage loop, dry and through fxStrip: exactly 8 bars at 132 BPM, reproducible, no step at the loop seam.
+    def check_loop(label, path_a, path_b):
+        frames = round(8 * 4 * 60 / 132 * 48000)
+        mono, pcm_a, info = load_wav(path_a, frames / 48000)
+        _, pcm_b, _ = load_wav(path_b, frames / 48000)
+        if info['frames'] != frames:
+            raise RuntimeError(f"{label}: {info['frames']} frames, expected exactly {frames}.")
+        if pcm_a != pcm_b:
+            raise RuntimeError(f'{label}: the same seed produced different PCM within this runtime.')
+        steps = sorted(abs(b - a) for a, b in zip(mono, mono[1:]))
+        typical = steps[int(0.999 * (len(steps) - 1))]
+        seam = abs(mono[0] - mono[-1])
+        if seam > typical:
+            raise RuntimeError(f'{label}: loop seam step {seam:.4f} exceeds the 99.9th percentile step {typical:.4f}.')
+        return {**info, 'seam_step': round(seam, 5), 'p999_step': round(typical, 5),
+                'same_seed_pcm_sha256': hashlib.sha256(pcm_a).hexdigest()}
+    garage_report = check_loop('garage', garage_a, garage_b)
+    fx_report = check_loop('garage fx', fx_a, fx_b)
     voices = {line.split()[1]: line.split()[2] for line in garage_log.splitlines() if line.startswith('VOICE ')}
     if sorted(voices) != ['clap', 'crash', 'hat', 'kick', 'ohat', 'rim']:
         raise RuntimeError(f'garage: unexpected voice report {voices}.')
@@ -192,8 +200,8 @@ def verify(args: argparse.Namespace, output: Path) -> dict:
             'gallery': gallery_info, 'voices': voice_info,
             'same_seed_pcm_sha256': hashlib.sha256(pcm_a).hexdigest(),
             'sidechain': {**sidechain_info, 'carrier_reduction_db': reduction, 'carrier_recovery_db': recovery},
-            'garage': {**garage_info, 'seam_step': round(seam, 5), 'p999_step': round(typical, 5), 'voice_peaks': voices,
-                       'same_seed_pcm_sha256': hashlib.sha256(pcm_ga).hexdigest()},
+            'garage': {**garage_report, 'voice_peaks': voices},
+            'garage_fx': fx_report,
             'listening_checked': False, 'hardware_output_checked': False}
 
 

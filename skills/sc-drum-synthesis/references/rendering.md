@@ -58,6 +58,10 @@ A loop file must be an exact number of frames, and hits near the end must not be
 
 Render voice k to output channels 2k and 2k+1 (`numOutputBusChannels = 2 * voices`). The stems give each voice's peak for an audibility check and let the mix be set by targets instead of hand-tuned `amp` values: in a first pass read the peak of each voice; in a second pass sum the stems with gain `target.dbamp / peak`, where the target is the voice's loudest hit in dB relative to the kick. The garage loop uses kick 0, clap -3, rim -5, closed hat -12, open hat -11, crash -9. Then normalize the sum (here to -1 dBFS peak). Peak targets survive timbre changes; they are not loudness matching, so long sounds such as open hats and crashes still need listening.
 
+## Processing voices through fxStrip
+
+`assets/fx.scd` returns `(def: fxStrip, presets: (kick: ..., snare: ..., clap: ..., hat: ..., ohat: ..., crash: ...))`. Route each processed voice to a private stereo bus (here 64 + 2k), create one strip per voice at time 0 in a group added after the source group (`[\g_new, 2000, 3, 1]`), and let the strip write the voice's stem to 2k, 2k+1; the stem-based mix targets then apply unchanged. `inGain` in each preset assumes the skill voice at its default `amp` and velocity 0.78; recalibrate it from a raw-peak render if a voice's level or parameters change. Reverb tails need a longer render tail (5 s for the presets), and one-shot slots of 6 s. `garage-nrt.scd` with `fx` shows the routing.
+
 ## One-shot batches for listening
 
 Render many one-shots in one NRT pass: start one hit per fixed slot (for example every 3.5 s, a whole number of 64-sample blocks at 48 kHz), then read each slot, trim at its last non-zero sample, and peak-normalize. Fail the batch if a slot still sounds in its last 0.1 s, since the next slot would contain the tail. Present the files one by one with good/bad ratings; a clear rating per sound is more useful than a verdict on a loop.
