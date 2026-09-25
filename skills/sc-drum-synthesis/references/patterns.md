@@ -68,6 +68,10 @@ Choke makes the pattern decide how long an open hat sounds. Leave at least two s
 
 A trap drop marks bar 1 with an impact and a downlifter on the downbeat, together with the kick and the 808; the approved loops have no crash on that bar. A riser that ends exactly at the loop point leads back into the head: in `trap-se-nrt.scd`, a 2-bar riser on bar 7 (`drop`) or a 4-bar riser on bar 5 (`scifi`), whose echoes fold onto bar 1 when the loop is wrapped. An 8-bar downlifter (`sweep`) spans the whole loop and restarts with each repeat.
 
+## Zaps and stutters in a phrase
+
+In the approved trap loops a zap restarts on every clap (`trap-se-nrt.scd` `zap`) or snare (`snarezap`) hit, and a laser marks the ends of bars 4 and 8. Stutter gestures work as fills at phrase ends: the last beat of a four-bar phrase as 1/16 repeats, the loop's last two beats accelerating from 1/8 to 1/64 into the loop point, a tape stop over the last two beats of a drop, or in a busier house loop a reversed beat at the end of bar 2, a pitch drop at the end of bar 4, lo-fi repeats at the end of bar 6, and stepped and then accelerating repeats through bar 8. Start a gesture on a hit, or move its slice onto the previous hit with `offset`: repeating an empty sixteenth repeats silence.
+
 ## Fills
 
 A useful restrained strategy adds snares to the last bar of a four-bar phrase while retaining the kick and hat framework. Build a crescendo and increase subdivisions toward the phrase boundary. This is one strategy; replacing or dropping kicks/hats can be appropriate for a break or a stronger fill.

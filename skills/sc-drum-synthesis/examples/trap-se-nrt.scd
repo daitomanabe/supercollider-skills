@@ -1,15 +1,18 @@
-// Usage: sclang -D -u CHECKED_FREE_UDP_PORT trap-se-nrt.scd /absolute/output.wav [seed] [drop|sweep|scifi|bass808|synbass]
+// Usage: sclang -D -u CHECKED_FREE_UDP_PORT trap-se-nrt.scd /absolute/output.wav [seed]
+//            [drop|sweep|scifi|bass808|synbass|zap|snarezap]
 // Listening-approved 8-bar trap loops at 140 BPM with sound effects at the head and a mono bass line:
 //   drop:  impact + lo-fi sub dive on bar 1, a 2-bar sweep up into the loop point, 808 bass;
 //   sweep: impact + an 8-bar trap downlifter that pumps on the quarter notes, 808 plus a synth bass an octave up;
 //   scifi: impact with quarter-note echoes + sci-fi downlifter on bar 1, a 4-bar sweep up from bar 5, 808 bass;
-//   bass808 / synbass: the two bass lines alone.
-// Voices come from assets/synthdefs.scd and assets/se_bass.scd. Each voice renders to its own stereo pair; the
-// mixdown sets each voice's loudest hit relative to the kick, folds every tail (the riser's echoes included) back onto
-// the start, and writes exactly 8 bars as 48 kHz int24 WAV, so the file loops without a seam. Seed 1 reproduces the
-// approved files.
+//   bass808 / synbass: the two bass lines alone;
+//   zap:   the drop with every clap through a quick delay-time zap and its reverb, and a laser in bars 4 and 8;
+//   snarezap: the drop with every snare through the favourite zap (a slow dive) and its reverb.
+// Voices come from assets/synthdefs.scd, assets/se_bass.scd and assets/zap.scd. Each voice renders to its own stereo
+// pair; the mixdown sets each voice's loudest hit relative to the kick, folds every tail (the riser's echoes included)
+// back onto the start, and writes exactly 8 bars as 48 kHz int24 WAV, so the file loops without a seam. Seed 1
+// reproduces the approved files.
 (
-var sr = 48000, bars = 8, bpm = 140, outPath, stemPath, seed, variant, defs, kit, mixTargets, claps, loops, g;
+var sr = 48000, bars = 8, bpm = 140, outPath, stemPath, seed, variant, defs, kit, mixTargets, claps, zaps, loops, g;
 var beat, stepDur, loopFrames, loopDur, tail, voices, hitsFor, charAt, wrap, events, score, lastHat;
 SystemClock.sched(120, { "[watchdog] forced exit".postln; 1.exit });
 try {
@@ -25,7 +28,7 @@ try {
     variant = thisProcess.argv.at(2) ? "drop";
     if("SC_SYNTH".getenv.notNil) { Score.program = "SC_SYNTH".getenv.shellQuote };
     TempoClock.default.tempo = 1;
-    defs = ["../assets/synthdefs.scd", "../assets/se_bass.scd"].collect { |f|
+    defs = ["../assets/synthdefs.scd", "../assets/se_bass.scd", "../assets/zap.scd"].collect { |f|
         thisProcess.interpreter.executeFile((thisProcess.nowExecutingPath.dirname +/+ f).standardizePath)
     }.flatten;
 
@@ -41,17 +44,24 @@ try {
         scidown: (def: \seSciDown),
         rise:    (def: \seRise),
         bass:    (def: \bass808, mono: 4),
-        synbass: (def: \bassSynth, mono: 2)
+        synbass: (def: \bassSynth, mono: 2),
+        laser:   (def: \seZap)
     );
     // dB, loudest hit vs the kick. Sustained effects sit lower than their peaks suggest; these put their RMS over
     // the bars they play near the kick's.
     mixTargets = (kick: 0, snare: -1, clap: -2, hat: -12,
-        impact: -2, down: -7, lodown: -5, scidown: -6, rise: -5, bass: -1, synbass: -8);
+        impact: -2, down: -7, lodown: -5, scidown: -6, rise: -5, bass: -1, synbass: -8, laser: -6);
     claps = (long: (freq: 1400, rq: 0.55, spread: 0.008, g4: 0.7, burst: 0.006, tail: 0.22, tailFreq: 1900));
+    // fxZap settings (assets/zap.scd), written out so the approved loops do not move with the SynthDef defaults.
+    // `slow` is the listener's favourite. `verb` is the zap reverb, also on the laser.
+    zaps = (verb: (verb: 0.4, room: 0.8, damp: 0.5));
+    zaps[\clap] = (hiFreq: 3000, loFreq: 110, sweep: 0.15, curve: 3, ring: 0.12, mix: 0.7).putAll(zaps[\verb]);
+    zaps[\slow] = (hiFreq: 3000, loFreq: 80, sweep: 0.35, curve: 1.5, ring: 0.3, mix: 0.7).putAll(zaps[\verb]);
 
     // One char per sixteenth: X accent, x normal, o ghost, s a note sliding from the previous one, . rest, 2-6 a
     // roll. 32-char strings are 2-bar patterns; bN replaces a voice for bar N. `notes` gives a mono voice's
-    // successive notes in semitones (cycling). The random seed is derived from `name`, as when these were approved.
+    // successive notes in semitones (cycling). `zap` puts fxZap on a voice, and every hit of that voice restarts
+    // the dive. The random seed is derived from `name`, as when these were approved.
     loops = (
         drop: (name: "trap-drop", tail: 5, mix: (snare: -9),
             kit: (kick: (freq: 52, tone: 0.6), bass: (freq: 43.65), clap: claps[\long],
@@ -91,10 +101,38 @@ try {
         bass808: (name: "bass808", kit: (bass: (freq: 43.65)),
             notes: (bass: [0, 0, 3, 0, 5, -2, 0]), pat: (bass: "x.....x...x.....x..x......x.s...")),
         synbass: (name: "synbass", kit: (synbass: (freq: 174.61)),
-            notes: (synbass: [0, 0, 3, 0, 5, 3, 0, -2, -2, 0]), pat: (synbass: "x..x..x...x.x...x..x..x...x.s..."))
+            notes: (synbass: [0, 0, 3, 0, 5, 3, 0, -2, -2, 0]), pat: (synbass: "x..x..x...x.x...x..x..x...x.s...")),
+        zap: (name: "trap-zap-verb", tail: 5, mix: (snare: -9),
+            kit: (kick: (freq: 52, tone: 0.6), bass: (freq: 43.65), clap: claps[\long],
+                snare: (freq: 230, tone: 0.8), hat: (tone: 0.8, decay: 0.07),
+                lodown: (beats: 8), rise: (beats: 8, tailBeats: 4), laser: zaps[\verb]),
+            zap: (clap: zaps[\clap]),
+            notes: (bass: [0, 0, 3, 0, 5, -2, 0]),
+            pat: (kick: "x.....x...x.....x..x......x.....", bass: "x.....x...x.....x..x......x.s...",
+                clap: "........x.......", snare: "........x.......",
+                hat: "x.x.x.x.x.x.x2x.x.x.x.x.x.x.3333"),
+            b1: (impact: "x...............", lodown: "x..............."),
+            b4: (hat: "x.x.x.x.4.x.x.x.", laser: "..............x."),
+            b7: (rise: "x..............."),
+            b8: (clap: "........x.....oX", hat: "x.x.x.x.x.x.2346", laser: "............x...")),
+        snarezap: (name: "trap-snarezap-slow", tail: 5, mix: (snare: -3),
+            kit: (kick: (freq: 52, tone: 0.6), bass: (freq: 43.65), clap: claps[\long],
+                snare: (freq: 230, tone: 0.8), hat: (tone: 0.8, decay: 0.07),
+                lodown: (beats: 8), rise: (beats: 8, tailBeats: 4)),
+            zap: (snare: zaps[\slow]),
+            notes: (bass: [0, 0, 3, 0, 5, -2, 0]),
+            pat: (kick: "x.....x...x.....x..x......x.....", bass: "x.....x...x.....x..x......x.s...",
+                clap: "........x.......", snare: "........x.......",
+                hat: "x.x.x.x.x.x.x2x.x.x.x.x.x.x.3333"),
+            b1: (impact: "x...............", lodown: "x..............."),
+            b4: (hat: "x.x.x.x.4.x.x.x."),
+            b7: (rise: "x..............."),
+            b8: (clap: "........x.....oX", snare: "........x.....oX", hat: "x.x.x.x.x.x.2346"))
     );
     g = loops[variant.asSymbol];
-    if(g.isNil) { Error("Unknown loop %; choose drop, sweep, scifi, bass808 or synbass".format(variant)).throw };
+    if(g.isNil) {
+        Error("Unknown loop %; choose drop, sweep, scifi, bass808, synbass, zap or snarezap".format(variant)).throw
+    };
 
     hitsFor = { |c|   // -> [[fraction of the step, velocity, slide], ...]
         case
@@ -166,6 +204,14 @@ try {
 
     score = Score.new;
     defs.do { |d| score.add([0, [\d_recv, d.asBytes]]) };
+    // A zapped voice k plays into private bus 64 + 2k; its fxZap reads that bus in a group after the voices and writes
+    // the voice's stem.
+    if(g[\zap].notNil) { score.add([0, [\g_new, 2000, 3, 1]]) };
+    (g[\zap] ? ()).keysValuesDo { |v, zp|
+        var k = voices.indexOf(v);
+        if(k.isNil) { Error("zap on a voice the loop does not play: " ++ v).throw };
+        score.add([0, [\s_new, \fxZap, 4000 + k, 0, 2000, \in, 64 + (2 * k), \out, 2 * k] ++ zp.asKeyValuePairs]);
+    };
     events.do { |e, k|
         var p = kit[e[1]].copy.putAll((g[\kit] ? ())[e[1]] ? ()), id = -1, msg;
         // Closed hats are one instrument: each hat hit chokes the hat still ringing.
@@ -175,8 +221,11 @@ try {
             lastHat = [id, e[0] + p[\decay]];
         };
         if(p[\mono].notNil) { p[\freq] = (p[\freq] ? 440) * e[4].midiratio; p[\len] = e[5]; p[\from] = e[6] };
-        msg = [\s_new, p[\def], id, 0, 1, \out, voices.indexOf(e[1]) * 2, \velocity, e[2],
+        msg = [\s_new, p[\def], id, 0, 1,
+            \out, (voices.indexOf(e[1]) * 2) + (if((g[\zap] ? ())[e[1]].notNil) { 64 } { 0 }), \velocity, e[2],
             \seed, p[\seed] ? 100000.rand, \beat, beat];
+        // Each hit of a zapped voice restarts its dive.
+        (g[\zap] ? ())[e[1]] !? { score.add([e[0], [\n_set, 4000 + voices.indexOf(e[1]), \t_trig, 1]]) };
         p.keysValuesDo { |key, v| if([\def, \seed, \mono].includes(key).not) { msg = msg ++ [key, v] } };
         score.add([e[0], msg]);
     };

@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
-"""Render the stock-core examples and verify audible output, routing, the seamless garage and trap loops, and the
-sound-effect presets."""
+"""Render the stock-core examples and verify audible output, routing, the seamless garage and trap loops, the
+sound-effect presets, the delay-time zap, and stutter gestures."""
 from __future__ import annotations
 
 import argparse
@@ -136,6 +136,23 @@ def carrier_amplitude(samples: list[float], start: float, duration: float = 0.04
     return 2 * math.hypot(sin, cos) / len(window)
 
 
+def raw_pcm(path: Path) -> bytes:
+    with wave.open(str(path), 'rb') as wav:
+        return wav.readframes(wav.getnframes())
+
+
+def resonance_lag_ms(samples: list[float], start: float, duration: float = 0.03) -> float:
+    """Lag of the strongest autocorrelation peak (0.2-4 ms) in a window: the period of a comb filter's resonance."""
+    first, count = round(start * 48000), round(duration * 48000)
+    window = samples[first:first + count]
+    best, lag = -math.inf, 0
+    for candidate in range(round(0.2 * 48), round(4.0 * 48)):
+        value = sum(window[i] * samples[first + i + candidate] for i in range(count))
+        if value > best:
+            best, lag = value, candidate
+    return lag / 48
+
+
 def verify(args: argparse.Namespace, output: Path) -> dict:
     sclang = shutil.which(args.sclang)
     if not sclang:
@@ -146,6 +163,9 @@ def verify(args: argparse.Namespace, output: Path) -> dict:
     gallery_a, gallery_b, ducking, garage_a, garage_b, fx_a, fx_b, trap_a, trap_b = [output / name for name in (
         'gallery-42a.wav', 'gallery-42b.wav', 'sidechain.wav', 'garage-42a.wav', 'garage-42b.wav',
         'garage-fx-42a.wav', 'garage-fx-42b.wav', 'trap-drop-42a.wav', 'trap-drop-42b.wav')]
+    zap_shot, zap_a, zap_b, stutter_a, stutter_b = [output / name for name in (
+        'zap-clap_zap-slow-verb.wav', 'trap-zap-42a.wav', 'trap-zap-42b.wav',
+        'garage-stutter-42a.wav', 'garage-stutter-42b.wav')]
     # Sound-effect presets: (file, preset, bpm, shortest and longest acceptable length in seconds). Lengths follow
     # the musical length (8 bars; the 8 s impact ring-out; 2 bars plus a 1-bar tail) and must stretch with bpm.
     se_cases = [('se-down_trap-pump.wav', 'down_trap-pump', 140, 13.6, 13.9),
@@ -153,7 +173,7 @@ def verify(args: argparse.Namespace, output: Path) -> dict:
                 ('se-impact_boom-b.wav', 'impact_boom', 140, 6.5, 8.05),
                 ('se-rise_2bar-120.wav', 'rise_2bar', 120, 5.3, 6.05)]
     for path in (gallery_a, gallery_b, ducking, garage_a, garage_b, fx_a, fx_b, trap_a, trap_b,
-                 *(output / case[0] for case in se_cases)):
+                 zap_shot, zap_a, zap_b, stutter_a, stutter_b, *(output / case[0] for case in se_cases)):
         if path.exists():
             raise RuntimeError(f'{path.name} already exists; use a fresh output directory.')
     render(sclang, library, 'drums-nrt.scd', gallery_a)
@@ -167,6 +187,14 @@ def verify(args: argparse.Namespace, output: Path) -> dict:
     render(sclang, library, 'trap-se-nrt.scd', trap_b, extra=('drop',))
     for name, preset, bpm, _, _ in se_cases:
         render(sclang, library, 'se-nrt.scd', output / name, seed=1, extra=(preset, str(bpm)))
+    render(sclang, library, 'zap-nrt.scd', zap_shot, seed=1, extra=('clap_zap-slow-verb',))
+    zap_log = render(sclang, library, 'trap-se-nrt.scd', zap_a, extra=('zap',))
+    render(sclang, library, 'trap-se-nrt.scd', zap_b, extra=('zap',))
+    # Stutter gestures on the garage loop just rendered: the last beat of bar 4 as 1/16 repeats, and an accelerating
+    # repeat over the loop's last two beats, starting from the kick a 1/16 before them.
+    gestures = ('fill16@15', 'accel@30:offset=-0.25')
+    for path in (stutter_a, stutter_b):
+        render(sclang, library, 'stutter-nrt.scd', path, extra=(str(garage_a), '132', *gestures))
     gallery, pcm_a, gallery_info = load_wav(gallery_a, 18)
     _, pcm_b, _ = load_wav(gallery_b, 18)
     if pcm_a != pcm_b:
@@ -223,6 +251,30 @@ def verify(args: argparse.Namespace, output: Path) -> dict:
         se_report[name] = {**info, 'pcm_sha256': hashlib.sha256(pcm).hexdigest()}
     if se_report['se-impact_boom-a.wav']['pcm_sha256'] != se_report['se-impact_boom-b.wav']['pcm_sha256']:
         raise RuntimeError('impact_boom: the same seed produced different PCM within this runtime.')
+    # The favourite zap: the comb's resonance must dive, from about 1.9 kHz 10 ms after the hit to about 490 Hz at
+    # 100 ms (autocorrelation lags 0.54 and 2.0 ms), under its reverb tail.
+    zap_mono, zap_pcm, zap_info = load_wav(zap_shot, None)
+    if not 2.0 <= zap_info['duration_seconds'] <= 4.0 or abs(zap_info['peak_dbfs'] + 1) > 0.05:
+        raise RuntimeError(f"zap: {zap_info['duration_seconds']:.3f} s at {zap_info['peak_dbfs']} dBFS, "
+                           'expected 2-4 s at -1 dBFS.')
+    onset = next(i for i, v in enumerate(zap_mono) if abs(v) > 0.05) / 48000
+    lags = [resonance_lag_ms(zap_mono, onset + t) for t in (0.01, 0.1)]
+    if not (lags[0] < 0.8 and lags[1] > 1.6):
+        raise RuntimeError(f'zap: resonance period {lags[0]} ms then {lags[1]} ms; the dive is missing.')
+    zap_report = check_loop('trap zap', zap_a, zap_b, 140)
+    zap_voices = {line.split()[1]: line.split()[2] for line in zap_log.splitlines() if line.startswith('VOICE ')}
+    if sorted(zap_voices) != ['bass', 'clap', 'hat', 'impact', 'kick', 'laser', 'lodown', 'rise', 'snare']:
+        raise RuntimeError(f'trap zap: unexpected voice report {zap_voices}.')
+    # Stutter: seamless and reproducible; outside the gestures (128 frames of margin for triggers that land on
+    # 64-sample blocks) the samples equal the input loop's, inside they differ.
+    stutter_report = check_loop('garage stutter', stutter_a, stutter_b, 132)
+    garage_raw, stutter_raw = raw_pcm(garage_a), raw_pcm(stutter_a)
+    at = [round(beat * 60 / 132 * 48000) for beat in (15, 16, 30, 32)]
+    kept, changed = [(0, at[0] - 128), (at[1] + 128, at[2] - 128)], [(at[0], at[1]), (at[2], at[3])]
+    if any(stutter_raw[6 * a:6 * b] != garage_raw[6 * a:6 * b] for a, b in kept):
+        raise RuntimeError('garage stutter: samples outside the gestures differ from the input loop.')
+    if any(stutter_raw[6 * a:6 * b] == garage_raw[6 * a:6 * b] for a, b in changed):
+        raise RuntimeError('garage stutter: a gesture left the loop unchanged.')
     return {'status': 'passed', 'supercollider': version, 'stock_class_library_only': True,
             'gallery': gallery_info, 'voices': voice_info,
             'same_seed_pcm_sha256': hashlib.sha256(pcm_a).hexdigest(),
@@ -231,6 +283,10 @@ def verify(args: argparse.Namespace, output: Path) -> dict:
             'garage_fx': fx_report,
             'trap_drop': {**trap_report, 'voice_peaks': trap_voices},
             'sound_effects': se_report,
+            'zap': {**zap_info, 'resonance_period_ms_at_10_and_100_ms': lags,
+                    'pcm_sha256': hashlib.sha256(zap_pcm).hexdigest()},
+            'trap_zap': {**zap_report, 'voice_peaks': zap_voices},
+            'garage_stutter': {**stutter_report, 'gestures': list(gestures), 'unchanged_outside_gestures': True},
             'listening_checked': False, 'hardware_output_checked': False}
 
 

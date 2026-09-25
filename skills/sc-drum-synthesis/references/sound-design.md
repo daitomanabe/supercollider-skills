@@ -125,6 +125,46 @@ What the measurements caught along the way:
 - The reference bass loops are mid basses (centroid ~340 Hz) meant to sit over separate kick-and-sub loops. At F2 the synth bass measured 165 Hz; an octave up with its sub an octave down matched, and it layers over the 808 with the sub off.
 - Noise UGens without `RandSeed` made each render of an effect differ slightly; the same-seed comparison caught it.
 
+## Delay-time zap
+
+`assets/zap.scd`: after each trigger a short feedback delay (`CombC`, cubic interpolation, so its time can change every sample) lengthens from 1/`hiFreq` to 1/`loFreq` over `sweep` seconds, and the comb's resonance falls in pitch; while the delay line lengthens, its Doppler shift pulls the ringing down further. `curve` shapes the move (fast first when large; 1.5 is close to a straight line in octaves). `ring` is the comb's decay time: short keeps the feedback short, and a negative value feeds back inverted, sounding odd harmonics an octave lower, a hollow tone. The feedback gain g = 0.001^(delay/ring) changes with the delay; scaling the output by sqrt(1 - g²) keeps a noisy input's level steady through the dive. `fxZap` crossfades from the dry input to the zapped sound for `sweep` + |`ring`| after each trigger (1 ms in, 20 ms out) and sends only that window to a reverb (15 ms predelay, high-passed at 200 Hz, `FreeVerb2`), so hits left alone stay dry. `seZap` puts a 4 ms noise burst through the same sweep: a laser.
+
+Listeners liked the zap as a whole on its first round (clap, snare, hat, rim, lasers), then asked for a reverb whenever it sounds, and picked a tight clap with a slow dive as the favourite; its setting is `fxZap`'s default. On a rim the dive was over too soon to hear. On a snare they asked for the dive while the snare sounds and in a short tail after it: a sweep about the dry snare's length with little feedback (`snare_dive-verb`). The approved one-shots in `examples/zap-nrt.scd`, all with the reverb at 0.4, room 0.8, damp 0.5:
+
+| Preset | Source | hiFreq to loFreq (Hz) | sweep (s) | curve | ring (s) | mix |
+|---|---|---|---|---|---|---|
+| `clap_zap-slow-verb` (favourite) | tight clap | 3000 to 80 | 0.35 | 1.5 | 0.3 | 0.7 |
+| `clap_zap-verb` | tight clap | 3000 to 110 | 0.15 | 3 | 0.12 | 0.7 |
+| `snare_dive-verb` | snare | 4000 to 120 | 0.15 | 2 | 0.06 | 0.85 |
+| `snare_slow-verb` | snare | 3000 to 80 | 0.35 | 1.5 | 0.3 | 0.7 |
+| `hat_pew-verb` | closed hat | 6000 to 500 | 0.12 | 2 | 0.15 | 0.8 |
+| `laser-verb` | `seZap` | 5000 to 60 | 0.25 | 3 | 0.25 | |
+| `laser-short-verb` | `seZap` | 4000 to 150 | 0.08 | 3 | 0.1 | |
+| `laser-hollow-verb` | `seZap` | 5000 to 80 | 0.25 | 3 | -0.3 | |
+
+The favourite's resonance follows the programmed delay: the autocorrelation peak of 30 ms windows starting 10 ms and 100 ms after the hit lies at 0.58 and 2.0 ms, where the sweep puts the delay at 0.54 and 2.04 ms (window centres); ten dry and processed claps show no such rise. The verifier checks it. With `verb` 0 the output equals that of the SynthDef without a reverb, sample for sample.
+
+## Stutter gestures
+
+`assets/stutter.scd` follows iZotope Stutter Edit 2. A gesture lasts a set number of beats; during it the sound is replaced by repeats of the slice that starts at the trigger, or `offset` beats from it (Stutter Edit's buffer position). Each setting moves from a start to an end value across the gesture: the repeat length (`divA` to `divB` in beats, shaped by `curve`, or stepped through powers of two with `step`), the part of each repeat that sounds (`width`), pitch plus a random offset per repeat (`jitter`), pan alternating between repeats, high- and low-pass cutoffs, bit depth and sample rate, and gain. `reverse` plays each repeat backwards; `tape` turns the gesture into a tape stop, slowing the read head from full speed to a halt. `stutterPlay` plays the rendered loop from a buffer at whole-sample positions, so outside gestures the output is the input sample for sample, and it crossfades over 4 ms at each end of a gesture.
+
+The ten gestures approved in listening (`examples/stutter-nrt.scd`), heard at 132 BPM on the garage loop and in garage, trap and house loops:
+
+| Gesture | Beats | Repeat length | Other moves |
+|---|---|---|---|
+| `fill16` | 1 | 1/16 | width 0.9 |
+| `accel` | 2 | 1/8 sliding to 1/64 | high-pass rising to 600 Hz |
+| `stepped` | 2 | 1/8, 1/16, 1/32, 1/64 in turn | width 0.85 |
+| `triplet` | 1 | 1/8 triplet | width 0.6, pan swing 0.6 |
+| `pitchup` | 2 | 1/16 to 1/32 | up 12 semitones, low-pass opening from 3 to 18 kHz |
+| `pitchdown` | 1 | 1/16 | down 12 semitones, low-pass closing from 16 to 1.5 kHz |
+| `reverse` | 1 | 1/8 | each repeat reversed |
+| `tapestop` | 2 | none | tape stop, low-pass closing from 18 to 2.5 kHz, -6 dB |
+| `lofi` | 1 | 1/32 | width 0.35, 8 to 6 bits, 8 to 4 kHz sample rate |
+| `jitter` | 1 | 1/16 to 1/32 | random ±7 semitones per repeat, pan swing 0.8 |
+
+Two-beat gestures that started on the garage loop's third beat of bar 2, where it has no hit, repeated a near-empty slice and sounded weak; starting the slice a sixteenth earlier, on the kick (`offset` -0.25), fixed them.
+
 ## Measuring against references
 
 `scripts/analyze_se.py OUT.jsonl BPM FILE_OR_DIR...` measures tempo-synced effects and bass in bars at `BPM`: onset, peak and -40/-60 dB ends, level at tenths of the sound, 95 % roll-off and centroid per fifth, pitch drift in semitones per bar (whitened log spectra 0.5 s apart, cross-correlated), flatness, sub share before and after the first 0.5 s, decay slopes (full band, sub, highs), level 50 ms, 0.2 s, and 1 s after the peak, width early and late, and the strongest modulation of the level (rate, cycles per beat, depth, and the cycle folded on the beat grid). It self-checks on a synthetic gated glide before running.

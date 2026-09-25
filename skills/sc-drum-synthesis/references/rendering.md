@@ -10,7 +10,7 @@ From the skill directory:
 python3 scripts/verify_examples.py
 ```
 
-This runs the NRT examples in a temporary directory: the drum gallery, the garage loop (dry and processed), and the trap loop twice each for same-seed identity, the sidechain graph, and four effect presets, one of them at 120 BPM to check that lengths follow the tempo. It selects a checked free UDP port for each sclang process and uses an explicit temporary class configuration with `-a` so the user's configured extension paths are not loaded. It cleans up only its own process group after success, timeout, errors, Ctrl-C, or SIGTERM. On Linux it supplies the offscreen Qt setting when none is configured. Class isolation is not a security sandbox; intentionally detached descendants are outside process-group cleanup. NRT scsynth consumes a score file without opening an audio device or network port.
+This runs the NRT examples in a temporary directory: the drum gallery, the garage loop (dry and processed), and the trap loop twice each for same-seed identity, the sidechain graph, and four effect presets, one of them at 120 BPM to check that lengths follow the tempo. It also renders the favourite zap, whose comb resonance must dive, the trap loop with zapped claps twice, and two stutter gestures on the garage loop twice, whose samples outside the gestures must equal the loop's. It selects a checked free UDP port for each sclang process and uses an explicit temporary class configuration with `-a` so the user's configured extension paths are not loaded. It cleans up only its own process group after success, timeout, errors, Ctrl-C, or SIGTERM. On Linux it supplies the offscreen Qt setting when none is configured. Class isolation is not a security sandbox; intentionally detached descendants are outside process-group cleanup. NRT scsynth consumes a score file without opening an audio device or network port.
 
 To retain WAVs for listening:
 
@@ -65,6 +65,14 @@ Render voice k to output channels 2k and 2k+1 (`numOutputBusChannels = 2 * voice
 ## Sound effects and bass in loops
 
 The effects in `assets/se_bass.scd` take `beat` (seconds per beat) and lengths in beats, so one preset serves any tempo; send `\beat, 60 / bpm` with every event (voices without that control ignore it). Render a tail that covers the longest ring-out past the loop end, 5 s for the trap loops, where a riser ending on the loop point folds its echoes onto bar 1 and leads into the impact. Mix effects by their RMS over the bars they play, not by peak: `trap-se-nrt.scd` uses impact -2, downlifters -5 to -7, riser -5, 808 -1, and synth bass -8 dB against the kick's peak, which brings each effect's RMS over the bars it plays to within about 10 dB of the kick's (the lo-fi dive matches it); at -12 dB the riser was inaudible under the 808. Rendering per-voice stems makes that measurable: sum each stem's squares in the mixing pass. Mono voices (`bass808`, `bassSynth`) get one note at a time; see [patterns](patterns.md#mono-bass-lines).
+
+## Zaps triggered per hit
+
+`fxZap` is an insert. Route each zapped voice k to a private stereo bus (64 + 2k), create one `fxZap` per voice at time 0 in a group after the voices (`[\g_new, 2000, 3, 1]`) that reads that bus and writes the voice's stem, and send `[\n_set, zapNode, \t_trig, 1]` at the time of every hit of the voice. Each hit then restarts the dive; to zap only accents, send the trigger only for hits above a velocity. With `auto` 1 the zap triggers on the input's own onsets instead, for audio without event times. The zap reverb needs a render tail (5 s in `trap-se-nrt.scd`), which the loop wrap folds onto the start. For a voice through `fxStrip`, chain two private buses: the strip at the head of the group writes the second one, and the zap at the tail reads it.
+
+## Stutter on a rendered loop
+
+Render the loop first, then play it with `stutterPlay`. Load it and start the player in one bundle at time 0 (`[\b_allocRead, 0, path], [\s_new, \stutterPlay, ...]`), so the buffer exists when the player starts, and `n_set` each gesture's full settings with `t_trig` 1 at its start. In NRT a trigger takes effect at the start of the 64-sample block that contains its time, up to 1.3 ms early at 48 kHz. `stutter-nrt.scd` keeps the input's length and level and fails on clipping rather than normalizing, so samples outside the gestures stay equal to the input's, and a loop stays seamless when its last gesture ends on the loop point. The player reads two channels at the file's own rate: check that the input is stereo at the render's sample rate, since a mono buffer would be read across frame boundaries without an error.
 
 ## One-shot batches for listening
 
